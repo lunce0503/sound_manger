@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private string? externalAddress;
     private CancellationTokenSource? tunnelStart;
     private readonly CancellationTokenSource shutdown = new();
+    private readonly WindowsConnectionStore connections = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SoundManager","connections"));
     private bool busy, closing;
     private record DeviceItem(string Id, string Name);
 
@@ -35,6 +36,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         RefreshDevices(this, new RoutedEventArgs());
+        try
+        {
+            var saved=connections.Client();
+            if (saved is not null) { RemoteAddress.Text=saved.Address; RemoteKey.Text=saved.Key; }
+        }
+        catch (Exception) { Status.Text="저장된 연결을 불러오지 못했습니다. 연결 설정에서 다시 인증하세요."; }
         timer.Tick += (_, _) => RefreshState(); timer.Start(); Closing += OnClosing;
     }
 
@@ -69,7 +76,7 @@ public partial class MainWindow : Window
                     if (args.Exception is not null) Dispatcher.BeginInvoke(async () =>
                     { await StopServer(); Status.Text = "출력 장치 연결 종료: " + args.Exception.Message; });
                 };
-                string key = HubServer.CreateToken();
+                string key = connections.ServerKey();
                 var candidate = new HubServer(mixer, key);
                 try { await candidate.StartAsync(); server = candidate; output.Play(); }
                 catch { await candidate.DisposeAsync(); throw; }
@@ -225,6 +232,7 @@ public partial class MainWindow : Window
                 try { await candidate.StartAsync(RemoteAddress.Text.Trim(), RemoteKey.Text.Trim(), Environment.MachineName); }
                 catch { await candidate.DisposeAsync(); throw; }
                 this.sender = candidate; SendButton.Content = "음원 전송 중지";
+                connections.SaveClient(new PairingLink(RemoteAddress.Text.Trim(),RemoteKey.Text.Trim()));
                 Status.Text = "기본 출력 장치의 원본 PCM을 전송 중입니다.";
             }
         }

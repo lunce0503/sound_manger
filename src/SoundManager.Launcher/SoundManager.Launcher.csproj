@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>SoundManager</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PayloadPath)' != ''">
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="SoundManager.Payload.zip" />
+    <AssemblyMetadata Include="PayloadSha256" Value="$(PayloadSha256)" />
+  </ItemGroup>
+</Project>

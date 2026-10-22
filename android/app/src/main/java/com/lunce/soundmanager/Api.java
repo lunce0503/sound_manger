@@ -6,6 +6,10 @@ import java.util.concurrent.TimeUnit;
 import okhttp3.*;
 
 final class Api {
+    static final class Failure extends IOException {
+        final int status;
+        Failure(int status) { super(status == 401 ? "서버 인증을 다시 연결해주세요." : "서버 응답: " + status); this.status = status; }
+    }
     static final OkHttpClient CLIENT = new OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
         .callTimeout(20, TimeUnit.SECONDS).pingInterval(15, TimeUnit.SECONDS)
@@ -22,7 +26,7 @@ final class Api {
         Request.Builder request = new Request.Builder().url(address + path).header("X-Sound-Key", key);
         if (body != null) request.method(method, RequestBody.create(body.toString(), MediaType.get("application/json")));
         try (Response response = CLIENT.newCall(request.build()).execute()) {
-            if (!response.isSuccessful()) throw new IOException(response.code() == 401 ? "연결 키가 올바르지 않습니다." : "서버 응답: " + response.code());
+            if (!response.isSuccessful()) throw new Failure(response.code());
             String text = response.body() == null ? "" : response.body().string();
             return text.isEmpty() ? new JSONObject() : new JSONObject(text);
         }

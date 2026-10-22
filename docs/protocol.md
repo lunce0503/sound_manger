@@ -1,6 +1,6 @@
 # Sound Manager protocol v1
 
-LAN 기본 주소 `http://<Windows IPv4>:17842`. 외부 모드에서는 Cloudflare 임시 터널의 `https://<name>.trycloudflare.com` 주소와 WSS를 사용합니다. 모든 HTTP 요청과 WebSocket 업그레이드 요청에 `X-Sound-Key: <서버의 연결 키>`를 포함합니다. 누락/불일치는 `401`. 서버 재시작마다 192-bit 무작위 키(48자 hex)가 생성됩니다. 외부 모드의 TLS는 Cloudflare에서 종료되고 로컬 서버로는 loopback HTTP를 사용합니다.
+LAN 기본 주소 `http://<Windows IPv4>:17842`. 외부 모드에서는 Cloudflare 임시 터널의 `https://<name>.trycloudflare.com` 주소와 WSS를 사용합니다. 모든 HTTP 요청과 WebSocket 업그레이드 요청에 `X-Sound-Key: <서버의 연결 키>`를 포함합니다. 누락/불일치는 `401`. 서버는 최초 실행 시 192-bit 무작위 키(48자 hex)를 생성하고 DPAPI로 암호화해 보관하며 다음 실행에서도 재사용합니다. Android는 성공한 연결을 Keystore AES-GCM으로 보관하고 재실행 시 인증 확인 요청을 다시 보여주지 않고 접속합니다. 외부 모드의 TLS는 Cloudflare에서 종료되고 로컬 서버로는 loopback HTTP를 사용합니다.
 
 ## QR 연결 정보 v1
 

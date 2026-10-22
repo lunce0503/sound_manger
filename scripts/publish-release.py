@@ -25,7 +25,7 @@ def main():
     if not version or any(c not in "0123456789." for c in version):
         raise RuntimeError("Invalid version")
     package_root = root / "artifacts" / "release" / f"v{version}"
-    files = [package_root / f"SoundManager-{version}-windows-x64.zip", package_root / f"SoundManager-{version}-android.apk", package_root / "SHA256SUMS.txt", package_root / "THIRD-PARTY-NOTICES.md", package_root / "LICENSE", package_root / "README.md"]
+    files = [package_root / f"SoundManager-{version}-windows-x64.exe", package_root / f"SoundManager-{version}-android.apk", package_root / "SHA256SUMS.txt", package_root / "THIRD-PARTY-NOTICES.md", package_root / "LICENSE", package_root / "README.md"]
     if not all(path.is_file() for path in files):
         raise RuntimeError("Release packages are missing")
     expected = dict(line.split("  ", 1)[::-1] for line in (package_root / "SHA256SUMS.txt").read_text(encoding="utf-8-sig").splitlines())

@@ -18,10 +18,22 @@ jobs:
       - run: dotnet publish src/SoundManager.Windows -c Release -r win-x64 --self-contained true -o artifacts/windows
       - shell: pwsh
         run: ./scripts/prepare-tunnel.ps1
+      - shell: pwsh
+        run: ./scripts/package-windows.ps1
+      - name: Verify standalone EXE extraction
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem artifacts/release/*/*-windows-x64.exe | Select-Object -First 1).FullName
+          $target = Join-Path $PWD 'artifacts/exe-check'
+          $process = Start-Process -FilePath $exe -ArgumentList '--extract-only',$target -WindowStyle Hidden -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw 'EXE extraction failed' }
+          foreach ($name in @('SoundManager.Windows.exe','SoundManager.Windows.dll','cloudflared.exe')) {
+            if ((Get-FileHash "artifacts/windows/$name").Hash -ne (Get-FileHash "$target/$name").Hash) { throw "File mismatch: $name" }
+          }
       - uses: actions/upload-artifact@v4
         with:
-          name: SoundManager-Windows-x64
-          path: artifacts/windows/
+          name: SoundManager-Windows-x64-EXE
+          path: artifacts/release/*/*-windows-x64.exe
   android:
     runs-on: ubuntu-latest
     steps:

@@ -1,4 +1,4 @@
-param([string]$Version = '0.2.0')
+param([string]$Version = '0.3.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected semantic version, for example 0.2.0' }
@@ -39,7 +39,7 @@ try {
     New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
     $apk = Join-Path $releaseRoot "SoundManager-$Version-android.apk"
     Copy-Item -LiteralPath android/app/build/outputs/apk/release/app-release.apk -Destination $apk
-    Compress-Archive -Path artifacts/windows/* -DestinationPath (Join-Path $releaseRoot "SoundManager-$Version-windows-x64.zip") -Force
+    & "$PSScriptRoot\package-windows.ps1" -Version $Version
     Copy-Item -LiteralPath LICENSE, README.md, THIRD-PARTY-NOTICES.md -Destination $releaseRoot
     $sums = Get-ChildItem -LiteralPath $releaseRoot -File | Where-Object Name -ne 'SHA256SUMS.txt' | ForEach-Object {
         "{0}  {1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name

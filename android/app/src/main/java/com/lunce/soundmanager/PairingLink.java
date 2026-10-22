@@ -85,4 +85,10 @@ final class PairingLink {
         try { return URLDecoder.decode(value, StandardCharsets.UTF_8.name()); }
         catch (java.io.UnsupportedEncodingException impossible) { throw new IllegalStateException(impossible); }
     }
+
+    String encode() {
+        try {
+            return "soundmanager://pair?v=1&server=" + URLEncoder.encode(address, "UTF-8") + "&key=" + URLEncoder.encode(key, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException impossible) { throw new IllegalStateException(impossible); }
+    }
 }

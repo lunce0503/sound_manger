@@ -1,7 +1,7 @@
 <Window x:Class="SoundManager.Windows.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Sound Manager 0.2.0" Width="900" Height="900" MinWidth="720" MinHeight="600"
+        Title="Sound Manager 0.3.0" Width="900" Height="850" MinWidth="720" MinHeight="600"
         Background="#101827" Foreground="#EDF3FF" FontFamily="Malgun Gothic">
     <Window.Resources>
         <Style TargetType="TextBlock"><Setter Property="Margin" Value="0,5,0,5"/></Style>
@@ -23,38 +23,48 @@
             <Button x:Name="ServerButton" Content="서버 시작" Click="ToggleServer"/>
         </WrapPanel>
         <TextBlock x:Name="ServerAddress" Text="포트 17842 · 같은 Wi-Fi/LAN에서 연결" TextWrapping="Wrap"/>
-        <TextBlock Text="휴대폰 앱에서 ‘QR로 서버 연결’을 누르세요." FontSize="16" FontWeight="Bold"/>
+        <Expander Header="새 기기 연결 · QR 인증" Foreground="#EDF3FF" Margin="0,10">
+        <StackPanel>
+        <TextBlock Text="휴대폰 앱의 연결 관리에서 QR로 연결하세요." FontSize="16" FontWeight="Bold"/>
         <ComboBox x:Name="PairAddress" SelectionChanged="PairAddressChanged"/>
         <Image x:Name="PairQr" Width="260" Height="260" HorizontalAlignment="Left"
                Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor"
                AutomationProperties.Name="서버 연결 QR 코드" Visibility="Collapsed"/>
         <WrapPanel>
             <Button Content="연결 코드 복사" Click="CopyPairing"/>
-            <Button x:Name="ExternalButton" Content="외부 네트워크 연결 켜기" Click="ToggleExternal" IsEnabled="False"/>
         </WrapPanel>
+        <TextBlock Text="수동 연결 키"/>
+        <TextBox x:Name="PairingKey" IsReadOnly="True"/>
+        </StackPanel>
+        </Expander>
+        <Button x:Name="ExternalButton" Content="외부 네트워크 연결 켜기" Click="ToggleExternal" IsEnabled="False" HorizontalAlignment="Left"/>
         <TextBlock Text="외부 연결은 Cloudflare 임시 HTTPS 터널을 사용합니다. 서버를 끄면 주소가 만료됩니다."
                    TextWrapping="Wrap" Foreground="#A9BCD6"/>
         <TextBlock Text="{Binding Text, ElementName=Status}" TextWrapping="Wrap" Foreground="#6EE7D0"/>
-        <TextBlock Text="연결 키 (서버를 시작할 때 새로 발급)"/>
-        <TextBox x:Name="PairingKey" IsReadOnly="True"/>
-        <TextBlock Text="총합 음량"/>
+        <TextBlock Text="전체 음량" FontSize="20" FontWeight="Bold"/>
         <Slider x:Name="MasterVolume" Minimum="0" Maximum="100" Value="70" ValueChanged="VolumeChanged"/>
-        <WrapPanel Margin="0,10,0,0">
+        <Expander Header="이퀄라이저 설정" Foreground="#EDF3FF" Margin="0,10">
+        <WrapPanel>
             <Button Content="기본" Tag="flat" Click="SetPreset"/>
             <Button Content="저음 강조" Tag="bass" Click="SetPreset"/>
             <Button Content="고음 강조" Tag="treble" Click="SetPreset"/>
             <Button Content="부드럽게" Tag="soft" Click="SetPreset"/>
             <Button Content="선명하게" Tag="clear" Click="SetPreset"/>
         </WrapPanel>
+        </Expander>
         <TextBlock x:Name="SourceSummary" Text="연결 음원 없음" TextWrapping="Wrap" Foreground="#A9BCD6"/>
         <Separator Margin="0,14"/>
         <TextBlock Text="02   이 PC의 소리 전송" FontSize="18" FontWeight="Bold"/>
         <TextBlock Text="다른 PC의 서버로 기본 출력 장치의 재생음을 보냅니다."/>
+        <Expander Header="서버 연결 설정" Foreground="#EDF3FF" Margin="0,10">
+        <StackPanel>
         <TextBox x:Name="PairingInput" ToolTip="서버에서 복사한 soundmanager:// 연결 코드"/>
         <Button Content="복사한 연결 코드 적용" Click="ImportPairing" HorizontalAlignment="Left"/>
         <TextBox x:Name="RemoteAddress" Text="http://192.168.0.10:17842"/>
         <TextBlock Text="서버에 표시된 연결 키"/>
         <TextBox x:Name="RemoteKey"/>
+        </StackPanel>
+        </Expander>
         <Button x:Name="SendButton" Content="음원 전송 시작" Click="ToggleSender" HorizontalAlignment="Left"/>
         <TextBlock Text="같은 PC에서 서버와 캡처를 동시에 실행하면 출력음이 재입력되므로 한 역할씩 실행합니다."
                    TextWrapping="Wrap" Foreground="#A9BCD6"/>
