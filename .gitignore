@@ -66,3 +66,17 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# .NET / Android / local credentials and generated packages
+bin/
+obj/
+.vs/
+.idea/
+.gradle/
+.tools/
+local.properties
+*.user
+*.jks
+*.keystore
+artifacts/
+TestResults/

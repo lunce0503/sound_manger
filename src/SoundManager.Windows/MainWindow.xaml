@@ -1,0 +1,52 @@
+<Window x:Class="SoundManager.Windows.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Sound Manager" Width="860" Height="760" MinWidth="720" MinHeight="600"
+        Background="#101827" Foreground="#EDF3FF" FontFamily="Malgun Gothic">
+    <Window.Resources>
+        <Style TargetType="TextBlock"><Setter Property="Margin" Value="0,5,0,5"/></Style>
+        <Style TargetType="TextBox"><Setter Property="Padding" Value="10,7"/><Setter Property="Margin" Value="0,4,0,12"/></Style>
+        <Style TargetType="Button"><Setter Property="Padding" Value="15,9"/><Setter Property="Margin" Value="0,4,10,10"/></Style>
+        <Style TargetType="ComboBox"><Setter Property="Padding" Value="8"/><Setter Property="Margin" Value="0,4,0,12"/></Style>
+    </Window.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="30">
+        <TextBlock Text="SOUND MANAGER" Foreground="#6EE7D0" FontSize="14" FontWeight="Bold"/>
+        <TextBlock Text="모든 기기의 소리를 한곳으로" FontSize="28" FontWeight="Bold"/>
+        <TextBlock Text="Windows 서버 · Android 원격 제어 · 원음 PCM 전송" Foreground="#A9BCD6"/>
+        <Separator Margin="0,14"/>
+        <TextBlock Text="01   통합 서버 / 무선 음향 출력" FontSize="18" FontWeight="Bold"/>
+        <TextBlock Text="Bluetooth 기기를 Windows에 먼저 연결한 후 출력 장치를 선택하세요."/>
+        <ComboBox x:Name="OutputDevices" DisplayMemberPath="Name"/>
+        <WrapPanel>
+            <Button Content="장치 새로고침" Click="RefreshDevices"/>
+            <Button x:Name="ServerButton" Content="서버 시작" Click="ToggleServer"/>
+        </WrapPanel>
+        <TextBlock x:Name="ServerAddress" Text="포트 17842 · 같은 Wi-Fi/LAN에서 연결" TextWrapping="Wrap"/>
+        <TextBlock Text="연결 키 (서버를 시작할 때 새로 발급)"/>
+        <TextBox x:Name="PairingKey" IsReadOnly="True"/>
+        <TextBlock Text="총합 음량"/>
+        <Slider x:Name="MasterVolume" Minimum="0" Maximum="100" Value="70" ValueChanged="VolumeChanged"/>
+        <WrapPanel Margin="0,10,0,0">
+            <Button Content="기본" Tag="flat" Click="SetPreset"/>
+            <Button Content="저음 강조" Tag="bass" Click="SetPreset"/>
+            <Button Content="고음 강조" Tag="treble" Click="SetPreset"/>
+            <Button Content="부드럽게" Tag="soft" Click="SetPreset"/>
+            <Button Content="선명하게" Tag="clear" Click="SetPreset"/>
+        </WrapPanel>
+        <TextBlock x:Name="SourceSummary" Text="연결 음원 없음" TextWrapping="Wrap" Foreground="#A9BCD6"/>
+        <Separator Margin="0,14"/>
+        <TextBlock Text="02   이 PC의 소리 전송" FontSize="18" FontWeight="Bold"/>
+        <TextBlock Text="다른 PC의 서버로 기본 출력 장치의 재생음을 보냅니다."/>
+        <TextBox x:Name="RemoteAddress" Text="http://192.168.0.10:17842"/>
+        <TextBlock Text="서버에 표시된 연결 키"/>
+        <TextBox x:Name="RemoteKey"/>
+        <Button x:Name="SendButton" Content="음원 전송 시작" Click="ToggleSender" HorizontalAlignment="Left"/>
+        <TextBlock Text="같은 PC에서 서버와 캡처를 동시에 실행하면 출력음이 재입력되므로 한 역할씩 실행합니다."
+                   TextWrapping="Wrap" Foreground="#A9BCD6"/>
+        <Border Background="#1E3047" Padding="14" CornerRadius="8" Margin="0,14,0,0">
+            <TextBlock x:Name="Status" Text="준비됨" TextWrapping="Wrap"/>
+        </Border>
+    </StackPanel>
+    </ScrollViewer>
+</Window>
