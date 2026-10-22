@@ -16,6 +16,8 @@ jobs:
       - run: dotnet build SoundManager.sln -c Release
       - run: dotnet test tests/SoundManager.Tests -c Release --no-build
       - run: dotnet publish src/SoundManager.Windows -c Release -r win-x64 --self-contained true -o artifacts/windows
+      - shell: pwsh
+        run: ./scripts/prepare-tunnel.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: SoundManager-Windows-x64
@@ -34,7 +36,7 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug lintDebug --console=plain
+          ./gradlew assembleDebug lintDebug testDebugUnitTest --console=plain
       - uses: actions/upload-artifact@v4
         with:
           name: SoundManager-Android-debug

@@ -2,6 +2,7 @@ package com.lunce.soundmanager;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -41,9 +42,17 @@ public final class MainActivity extends Activity {
         scroll.addView(root); setContentView(scroll);
         text(root, "SOUND MANAGER", 15).setTextColor(Color.rgb(110,231,208));
         text(root, "소리를 모으고, 공간을 조정하세요", 25);
-        text(root, "Windows 서버와 같은 Wi-Fi에 연결하세요.", 14);
+        text(root, "QR로 연결하세요. 외부에서는 Windows 서버의 외부 연결을 켜세요.", 14);
+        button(root, "QR로 서버 연결", () -> startActivityForResult(new Intent(this, QrScanActivity.class), 30));
+        button(root, "복사한 연결 코드 붙여넣기", () -> {
+            android.content.ClipboardManager clipboard = getSystemService(android.content.ClipboardManager.class);
+            if (clipboard.hasPrimaryClip() && clipboard.getPrimaryClip().getItemCount() > 0)
+                confirmPairing(clipboard.getPrimaryClip().getItemAt(0).coerceToText(this).toString());
+            else status.setText("복사한 연결 코드가 없습니다.");
+        });
         address = input("서버 주소", getPreferences(0).getString("address", "http://192.168.0.10:17842"));
         key = input("서버에 표시된 연결 키", "");
+        key.setSaveEnabled(false);
         key.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         button(root, "서버 연결 / 상태 새로고침", this::connect);
         status = text(root, "서버 연결 전", 14);
@@ -81,6 +90,19 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> { if (api == current && revision == version) showState(state); });
             } catch (Exception error) { runOnUiThread(() -> { if (api == current) showError(error); }); }
         }, 0, 2, TimeUnit.SECONDS);
+        if (getIntent().getData() != null) confirmPairing(getIntent().getData().toString());
+    }
+
+    private void confirmPairing(String text) {
+        try {
+            PairingLink pair = PairingLink.parse(text);
+            new AlertDialog.Builder(this).setTitle("이 서버에 연결할까요?")
+                .setMessage(pair.address).setNegativeButton("취소", null)
+                .setPositiveButton("연결", (dialog, which) -> {
+                    if (CaptureService.active) stopService(new Intent(this, CaptureService.class));
+                    address.setText(pair.address); key.setText(pair.key); connect();
+                }).show();
+        } catch (Exception error) { showError(error); }
     }
 
     private EditText input(String label, String value) {
@@ -174,6 +196,9 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == 30 && result == RESULT_OK && data != null) {
+            confirmPairing(data.getStringExtra("pairing")); return;
+        }
         if (request == 20 && result == RESULT_OK && data != null && api != null) {
             startForegroundService(new Intent(this, CaptureService.class).putExtra("permission", data)
                 .putExtra("address", api.address).putExtra("key", api.key));

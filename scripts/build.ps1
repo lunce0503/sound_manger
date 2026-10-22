@@ -9,6 +9,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
     dotnet publish src/SoundManager.Windows -c Release -r win-x64 --self-contained true -o artifacts/windows
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
+    & "$PSScriptRoot\prepare-tunnel.ps1"
     if (!$SkipAndroid) {
         Push-Location android
         try {

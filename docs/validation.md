@@ -26,16 +26,31 @@ cd android
 | 항목 | 결과 |
 | --- | --- |
 | .NET Release 빌드 | 성공, 경고/오류 0개 |
-| .NET DSP/HTTP/WebSocket 테스트 | 20개 통과, 실패/건너뜀 0개 |
+| .NET DSP/HTTP/WebSocket/QR 테스트 | 38개 통과, 실패/건너뜀 0개 |
 | Windows x64 self-contained publish | 성공 |
 | Android `assembleDebug` | 성공, 디버그 APK 생성 |
 | Android `lintDebug` | 성공, `No issues found` |
+| Android `assembleRelease` / `lintRelease` | 성공, 릴리스 APK 생성, `No issues found` |
+| Android QR 연결 정보 테스트 | JVM 테스트 5개 통과 |
+| Android APK 서명 | `apksigner verify` 성공, APK Signature Scheme v2, RSA 3072 |
 | Windows 실행 화면 | 실행·출력 장치 열거 확인 |
 | Windows 서버 시작/제어 | 선택한 WASAPI 출력 초기화, 키 발급, 상태 API `200`, UI의 저음 강조 설정이 API에 +6 dB로 반영됨 확인 |
 | Windows 서버 중지 | 중지 및 연결 키 제거 확인 |
+| Windows QR/외부 모드 UI | LAN QR 표시, 외부 모드 시작 후 HTTPS 주소 자동 선택·QR 갱신, 해당 공개 주소 상태 API 200, 끄기 후 자식 프로세스 종료·LAN QR 복귀 확인 |
+| 외부 HTTPS/WSS | 실제 공개 Cloudflare 터널에서 상태 200, 미인증 401, 믹서 제어 성공, 합성 PCM 19,200 bytes 수신·960 samples 렌더 확인 |
 | Android/Bluetooth 실기기 청취 | 미실행. 연결된 Android 테스트 기기 없음 |
 
 GUI 검증은 무음 상태에서 진행했습니다. Bluetooth 출력 장치를 열 수 있음은 확인했으나 실제 음질·지연·다중 기기 수신의 실기기 검증을 대체하지 않습니다. GitHub Actions의 원격 실행 결과는 별도 확인 대상입니다.
+
+외부 경로 검증 명령(17842 포트 사용):
+
+```powershell
+dotnet run --project tools/SoundManager.NetworkCheck -c Release -- --tunnel-exe artifacts/windows/cloudflared.exe
+```
+
+이 검증은 테스트용 서버와 터널을 열고 인증/제어 및 합성 PCM을 시험한 뒤 둘 다 정리합니다. 실제 사용자 오디오를 캡처하거나 하드웨어로 재생하지 않습니다. 모바일 통신사 경로와 카메라 스캔은 검증하지 않습니다.
+
+v0.2.0 Android 릴리스 인증서 SHA256(공개 식별자): `7217017ad413a98cc79e74bf44a6d4e13c93852ca32ef538e75881db1cda7687`.
 
 ## 실기기 점검 절차 (아직 미실행)
 
@@ -51,5 +66,5 @@ GUI 검증은 무음 상태에서 진행했습니다. Bluetooth 출력 장치를
 
 - 실기기에서 출력/캡처 장치 변경, 지연과 클럭 드리프트 측정.
 - HRTF 기반 binaural 렌더링, 효과 전환 smoothing, 고품질 서버 리샘플러와 look-ahead limiter.
-- TLS 및 기기별 페어링, 자동 검색, 재연결, 설정 저장.
+- 고정 주소 외부 연결, 기기별 페어링/권한, 자동 검색, 재연결, 설정 저장.
 - Android 서버/출력 역할과 절대 시간 기반 다중 소스 동기화.

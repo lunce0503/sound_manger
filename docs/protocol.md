@@ -1,6 +1,12 @@
 # Sound Manager protocol v1
 
-기본 주소 `http://<Windows IPv4>:17842`. 모든 HTTP 요청과 WebSocket 업그레이드 요청에 `X-Sound-Key: <서버의 연결 키>`를 포함합니다. 누락/불일치는 `401`. v1은 신뢰하는 LAN에서 사용하며 TLS를 제공하지 않습니다. 서버 재시작마다 192-bit 무작위 키(48자 hex)가 생성됩니다.
+LAN 기본 주소 `http://<Windows IPv4>:17842`. 외부 모드에서는 Cloudflare 임시 터널의 `https://<name>.trycloudflare.com` 주소와 WSS를 사용합니다. 모든 HTTP 요청과 WebSocket 업그레이드 요청에 `X-Sound-Key: <서버의 연결 키>`를 포함합니다. 누락/불일치는 `401`. 서버 재시작마다 192-bit 무작위 키(48자 hex)가 생성됩니다. 외부 모드의 TLS는 Cloudflare에서 종료되고 로컬 서버로는 loopback HTTP를 사용합니다.
+
+## QR 연결 정보 v1
+
+`soundmanager://pair?v=1&server=<percent-encoded base http(s) URL>&key=<connection key>`
+
+정확히 `v`, `server`, `key` 세 필드를 포함하며 중복 필드·지원하지 않는 버전·다른 호스트/경로·fragment를 거부합니다. 주소는 루트 URL만 허용합니다. HTTP는 사설/LAN/loopback 및 CGNAT VPN 주소에만 허용하며 공개 도메인/IP에는 HTTPS가 필요합니다. 연결 키는 24–128자 ASCII 영숫자입니다. QR에는 서버 제어 권한이 포함되며 공유 대상을 제한해야 합니다. Android 앱은 스캔한 주소를 표시하고 사용자가 연결한 경우에만 인증 요청을 전송합니다.
 
 ## 원본 PCM 전송
 

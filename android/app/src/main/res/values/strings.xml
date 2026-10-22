@@ -1,4 +1,6 @@
 <resources>
+    <string name="scan_prompt">Windows 서버의 연결 QR 코드를 비춰주세요</string>
+    <string name="camera_permission">QR 스캔에는 카메라 권한이 필요합니다. 연결 코드를 붙여넣어 연결할 수도 있습니다.</string>
     <string name="connected_status">연결됨 · 음원 %1$d개 · 클리핑 샘플 수 %2$d</string>
     <string name="error_status">확인 필요: %1$s</string>
     <string name="slider_value">%1$s  %2$d</string>

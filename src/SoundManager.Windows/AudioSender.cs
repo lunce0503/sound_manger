@@ -18,9 +18,7 @@ internal sealed class AudioSender : IAsyncDisposable
 
     public async Task StartAsync(string address, string key, string name)
     {
-        var uri = new Uri(address);
-        if (uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo))
-            throw new ArgumentException("http://서버IP:17842 주소를 입력하세요.");
+        var uri = new Uri(PairingLink.NormalizeAddress(address));
         var endpoint = new UriBuilder(uri) { Scheme = uri.Scheme == "https" ? "wss" : "ws", Path = "/v1/audio", Query = "" }.Uri;
         capture = new WasapiLoopbackCapture();
         var wave = capture.WaveFormat;

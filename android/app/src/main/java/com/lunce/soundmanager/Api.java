@@ -7,15 +7,13 @@ import okhttp3.*;
 
 final class Api {
     static final OkHttpClient CLIENT = new OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS)
-        .callTimeout(8, TimeUnit.SECONDS).pingInterval(15, TimeUnit.SECONDS).build();
+        .connectTimeout(10, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS).pingInterval(15, TimeUnit.SECONDS)
+        .followRedirects(false).followSslRedirects(false).build();
     final String address, key;
 
     Api(String address, String key) {
-        HttpUrl url = HttpUrl.parse(address.trim());
-        if (url == null || !url.username().isEmpty() || !url.password().isEmpty())
-            throw new IllegalArgumentException("http://서버IP:17842 주소를 입력하세요.");
-        this.address = url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString().replaceAll("/$", "");
+        this.address = PairingLink.normalizeAddress(address);
         if (key.trim().length() < 24) throw new IllegalArgumentException("서버 연결 키를 확인하세요.");
         this.key = key.trim();
     }

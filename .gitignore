@@ -79,4 +79,9 @@ local.properties
 *.jks
 *.keystore
 artifacts/
+*.apk
+*.aab
+*.dpapi
+__pycache__/
+*.pyc
 TestResults/
