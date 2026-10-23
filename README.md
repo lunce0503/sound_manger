@@ -2,7 +2,7 @@
 
 여러 Windows·Android 기기의 재생음을 Windows 서버에서 합쳐 Bluetooth 이어폰·스피커로 출력하는 초기 MVP입니다. Android 앱에서 QR로 연결하고 전체 음량, EQ와 음원별 방향을 조정합니다. 외부 네트워크에서는 앱의 Cloudflare HTTPS 터널을 사용할 수 있습니다.
 
-[v0.3.1 릴리스 및 다운로드](https://github.com/lunce0503/sound_manger/releases/tag/v0.3.1) · [변경 사항](docs/releases/v0.3.1.md)
+[v0.3.2 릴리스 및 다운로드](https://github.com/lunce0503/sound_manger/releases/tag/v0.3.2) · [변경 사항](docs/releases/v0.3.2.md)
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,7 @@ flowchart LR
 ## 실행
 
 1. Windows 서버 PC에 Bluetooth 이어폰/스피커를 페어링합니다.
-2. 배포한 `SoundManager-0.3.1-windows-x64.exe`를 실행합니다. 필요한 파일이 사용자 앱 폴더에 자동으로 풀리고 앱이 열립니다. 출력 장치를 선택한 뒤 **서버 시작**을 누릅니다.
+2. 배포한 `SoundManager-0.3.2-windows-x64.exe`를 실행합니다. 필요한 파일이 사용자 앱 폴더에 자동으로 풀리고 앱이 열립니다. 출력 장치를 선택한 뒤 **서버 시작**을 누릅니다.
 3. Windows 방화벽 알림에서는 사용하는 **개인 네트워크** 접근을 허용합니다. 수동 설정이 필요한 경우 서버 TCP `17842`를 같은 LAN에 허용합니다.
 4. Windows의 **새 기기 연결 · QR 인증**을 펼쳐 휴대폰과 같은 네트워크의 주소를 선택합니다. Android의 **연결 관리 → QR로 서버 연결**에서 스캔하고 주소를 확인하여 연결합니다. 카메라 없이 연결 코드를 붙여넣거나 연결 관리의 **주소와 키로 연결**을 사용할 수도 있습니다.
 5. Android에서 **재생음 전송 시작**을 누르고 오디오 권한 및 시스템 캡처 승인을 합니다. 캡처 가능한 앱에서 음악을 재생합니다. 서버의 출력 장치로 합산된 음원이 재생됩니다.
@@ -38,7 +38,19 @@ flowchart LR
 
 트레이 아이콘을 두 번 클릭하거나 메뉴의 **Sound Manager 열기**로 창을 복원합니다. EXE를 다시 실행해도 같은 Windows 로그인 세션의 기존 창을 엽니다. 종료하려면 트레이 메뉴 또는 창 하단의 **완전 종료 (서버 중지)**를 누릅니다. 전송과 서버, 외부 터널을 정리한 뒤 앱이 종료됩니다.
 
-Windows에 로그인한 상태에서 앱이 실행되어 있어야 합니다. PC 절전 중에는 작동하지 않으며 로그아웃·PC 종료·완전 종료 후에는 앱을 다시 실행하고 서버를 시작해야 합니다. Windows 서비스나 부팅 시 자동 실행은 설정하지 않습니다. 이전 버전 앱은 먼저 종료한 후 새 EXE를 실행하세요.
+Windows에 로그인한 상태에서 앱이 실행되어 있어야 합니다. PC 절전 중에는 작동하지 않습니다. 이전 버전 앱은 먼저 완전 종료한 후 새 EXE를 실행하세요.
+
+### Windows 로그인 시 서버 자동 시작
+
+1. 자동 시작에 사용할 Bluetooth 이어폰/스피커를 연결하고 **출력 장치**에서 선택합니다.
+2. **시작 설정 → Windows 로그인 시 백그라운드 실행 및 서버 자동 시작**을 켭니다. 기본값은 꺼짐입니다.
+3. 다음 Windows 로그인부터 창을 표시하지 않고 트레이에서 서버를 시작합니다. 저장한 출력 장치나 오디오 서비스가 아직 준비되지 않았으면 5초 간격으로 재시도합니다. 선택한 장치가 없을 때 다른 스피커로 바꾸지 않습니다.
+4. 트레이 아이콘으로 앱을 열면 서버 상태와 저장된 출력 장치를 확인할 수 있습니다. 자동 시작을 기다리는 중에도 서버/전송 버튼으로 수동 조작하거나 완전 종료할 수 있습니다.
+5. 같은 옵션을 끄면 다음 로그인부터 자동 실행을 해제하고 대기 중인 자동 시작을 취소합니다. 현재 실행 중인 서버는 유지합니다. **완전 종료**는 이번 실행만 종료하며 다음 로그인 설정은 보존합니다.
+
+현재 Windows 사용자에게만 적용되고 관리자 권한이 필요하지 않습니다. [Windows 로그인 시작 프로그램](https://learn.microsoft.com/windows/win32/setupapi/run-and-runonce-registry-keys)에 등록하므로 로그인 전에는 실행되지 않습니다. Windows 설정/작업 관리자의 시작 앱에서 사용 안 함으로 바꾸면 해당 앱을 다시 허용해야 합니다.
+
+배포 EXE가 풀어둔 사용자 앱 폴더에서 시작하므로 다운로드한 원본 EXE를 옮겨도 동작합니다. 새 버전을 처음 열 때 켜둔 자동 실행 등록도 새 버전으로 갱신합니다. 사용자 앱 폴더를 삭제하면 다시 EXE를 실행하고 설정을 확인하세요. 서버 인증 키는 기존 DPAPI 저장소에서 재사용합니다. 외부 연결은 서버 시작 후 **외부 네트워크 연결 켜기**에서 설정하며 새 임시 주소 QR이 필요할 수 있습니다.
 
 ### 다른 Wi-Fi / 모바일 데이터로 연결
 
@@ -75,7 +87,7 @@ cd android
 
 - Windows 개발용 실행 폴더: `artifacts/windows/SoundManager.Windows.exe` (x64, .NET 런타임 포함). 사용자 배포에는 아래의 단일 EXE를 사용합니다.
 - Android 개발용: `artifacts/android/SoundManager-debug.apk`.
-- 릴리스: `scripts/release.ps1`로 **단일 Windows EXE**와 **릴리스 서명 APK**, `SHA256SUMS.txt`를 `artifacts/release/v0.3.1`에 생성합니다. Windows 배포는 앞으로 항상 EXE이며 ZIP은 내부 패키징에만 사용합니다. EXE는 구성 파일 무결성을 확인하고 `%LOCALAPPDATA%/SoundManager/versions`에 풀어 실행합니다. Android 서명 키는 `%LOCALAPPDATA%/SoundManager/release-signing`에 보관하며 업데이트를 위해 보존해야 합니다. [릴리스·서명 안내](docs/releasing.md)
+- 릴리스: `scripts/release.ps1`로 **단일 Windows EXE**와 **릴리스 서명 APK**, `SHA256SUMS.txt`를 `artifacts/release/v0.3.2`에 생성합니다. Windows 배포는 앞으로 항상 EXE이며 ZIP은 내부 패키징에만 사용합니다. EXE는 구성 파일 무결성을 확인하고 `%LOCALAPPDATA%/SoundManager/versions`에 풀어 실행합니다. Android 서명 키는 `%LOCALAPPDATA%/SoundManager/release-signing`에 보관하며 업데이트를 위해 보존해야 합니다. [릴리스·서명 안내](docs/releasing.md)
 - CI: push/PR마다 Windows 빌드·테스트, Android APK 빌드·lint를 실행하고 GitHub Actions artifact로 저장합니다.
 
 ## 현재 제약
@@ -104,4 +116,4 @@ cd android
 | `docs/protocol.md` | 통신 규격 |
 | `docs/validation.md` | 빌드/테스트 결과와 실기기 점검 절차 |
 
-MIT 라이선스. 현재 버전 `0.3.1` (시험 배포). 포함한 라이브러리·터널 도구의 라이선스는 `THIRD-PARTY-NOTICES.md`를 참조하세요.
+MIT 라이선스. 현재 버전 `0.3.2` (시험 배포). 포함한 라이브러리·터널 도구의 라이선스는 `THIRD-PARTY-NOTICES.md`를 참조하세요.

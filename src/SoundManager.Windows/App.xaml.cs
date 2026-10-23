@@ -12,7 +12,9 @@ public partial class App : Application
         instance = new SingleInstance(SingleInstance.CurrentSessionName);
         if (!instance.IsFirst)
         {
-            instance.RequestRestore();
+            // A delayed Windows login launch must not reveal an existing hidden window.
+            if (e.Args.Contains("--startup")) instance.RequestStartup();
+            else instance.RequestRestore();
             Shutdown();
             return;
         }
@@ -21,8 +23,12 @@ public partial class App : Application
         instance.Listen(() => Dispatcher.BeginInvoke(() =>
         {
             if (!Dispatcher.HasShutdownStarted) window.RestoreFromTray();
+        }), () => Dispatcher.BeginInvoke(() =>
+        {
+            if (!Dispatcher.HasShutdownStarted) window.StartAutomatically();
         }));
-        window.Show();
+        if (e.Args.Contains("--startup")) window.StartAutomatically();
+        else window.Show();
     }
 
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)

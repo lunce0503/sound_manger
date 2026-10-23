@@ -137,7 +137,7 @@ public sealed class BackgroundLifetimeTests
     private static Window TestWindow() => new()
     { Width = 100, Height = 100, Left = -10000, Top = -10000, ShowInTaskbar = false };
 
-    private static Task OnDesktop(Func<Task> test)
+    internal static Task OnDesktop(Func<Task> test)
     {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>

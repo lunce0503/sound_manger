@@ -20,6 +20,12 @@ public partial class MainWindow : Window
     private readonly MMDeviceEnumerator enumerator = new();
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly BackgroundWindowLifetime lifetime;
+    private readonly StartupRegistration startupRegistration = new();
+    private readonly OutputDeviceStore deviceStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "SoundManager", "output-device.json"));
+    private SavedOutputDevice? savedOutput;
+    private CancellationTokenSource? automaticStart;
+    private Task automaticStartTask = Task.CompletedTask;
     private HubServer? server;
     private WasapiOut? output;
     private MMDevice? outputDevice;
@@ -29,12 +35,21 @@ public partial class MainWindow : Window
     private CancellationTokenSource? tunnelStart;
     private readonly CancellationTokenSource shutdown = new();
     private readonly WindowsConnectionStore connections = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SoundManager","connections"));
-    private bool busy, closing;
+    private bool busy, closing, refreshingDevices;
     private record DeviceItem(string Id, string Name);
 
     public MainWindow()
     {
         InitializeComponent();
+        try
+        {
+            savedOutput = deviceStore.Load();
+            LoginStartup.IsChecked = startupRegistration.IsEnabled;
+            // Opening an update moves the login entry to this version's persistent app folder.
+            if (LoginStartup.IsChecked == true) startupRegistration.Enable(Environment.ProcessPath!);
+        }
+        catch (Exception) { Status.Text = "시작 설정을 불러오지 못했습니다. 시작 설정과 출력 장치를 확인하세요."; }
+        UpdateStartupOutput();
         RefreshDevices(this, new RoutedEventArgs());
         try
         {
@@ -50,16 +65,23 @@ public partial class MainWindow : Window
     {
         try
         {
-            var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
-            OutputDevices.ItemsSource = devices.Select(d => new DeviceItem(d.ID, d.FriendlyName)).ToArray();
-            foreach (var device in devices) device.Dispose();
-            OutputDevices.SelectedIndex = 0;
+            string? previous = (OutputDevices.SelectedItem as DeviceItem)?.Id ?? savedOutput?.Id;
+            var devices = ReadOutputDevices();
+            refreshingDevices = true;
+            try
+            {
+                OutputDevices.ItemsSource = devices;
+                OutputDevices.SelectedItem = devices.FirstOrDefault(d => d.Id == previous);
+                if (OutputDevices.SelectedItem is null) OutputDevices.SelectedIndex = 0;
+            }
+            finally { refreshingDevices = false; }
         }
         catch (Exception error) { Status.Text = error.Message; }
     }
 
     private async void ToggleServer(object sender, RoutedEventArgs e)
     {
+        automaticStart?.Cancel();
         if (busy || closing) return;
         busy = true;
         try
@@ -69,35 +91,142 @@ public partial class MainWindow : Window
             {
                 if (this.sender is not null) throw new InvalidOperationException("먼저 음원 전송을 중지하세요.");
                 if (OutputDevices.SelectedItem is not DeviceItem selected) throw new InvalidOperationException("출력 장치를 선택하세요.");
-                outputDevice = enumerator.GetDevice(selected.Id);
-                output = new WasapiOut(outputDevice, AudioClientShareMode.Shared, true, 60);
-                output.Init(new MixerProvider(mixer));
-                output.PlaybackStopped += (_, args) =>
-                {
-                    if (args.Exception is not null) Dispatcher.BeginInvoke(async () =>
-                    { await StopServer(); Status.Text = "출력 장치 연결 종료: " + args.Exception.Message; });
-                };
-                string key = connections.ServerKey();
-                var candidate = new HubServer(mixer, key);
-                try
-                {
-                    await candidate.StartAsync(shutdown.Token);
-                    shutdown.Token.ThrowIfCancellationRequested();
-                    server = candidate; output.Play();
-                }
-                catch { await candidate.DisposeAsync(); throw; }
-                PairingKey.Text = key; ServerButton.Content = "서버 중지"; OutputDevices.IsEnabled = false;
-                var ips = Dns.GetHostAddresses(Dns.GetHostName()).Where(a => a.AddressFamily == AddressFamily.InterNetwork);
-                var addresses = ips.Select(a => $"http://{a}:17842").Where(IsLocalPairAddress).Distinct().ToArray();
-                if (addresses.Length == 0) addresses = ["http://127.0.0.1:17842"];
-                PairAddress.ItemsSource = addresses; PairAddress.SelectedIndex = 0;
-                ExternalButton.IsEnabled = true;
-                ServerAddress.Text = "같은 네트워크에서는 아래 주소의 QR을 스캔하세요.";
-                Status.Text = "서버 실행 중 · Android 앱에서 QR을 스캔하세요.";
+                SaveOutputDevice(selected);
+                await StartServerAsync(selected, shutdown.Token);
             }
         }
         catch (Exception error) { await StopServer(); Status.Text = error.Message; }
         finally { busy = false; }
+    }
+
+    private async Task StartServerAsync(DeviceItem selected, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        outputDevice = enumerator.GetDevice(selected.Id);
+        output = new WasapiOut(outputDevice, AudioClientShareMode.Shared, true, 60);
+        output.Init(new MixerProvider(mixer));
+        output.PlaybackStopped += (_, args) =>
+        {
+            if (args.Exception is not null) Dispatcher.BeginInvoke(async () =>
+            { await StopServer(); Status.Text = "출력 장치 연결 종료: " + args.Exception.Message; });
+        };
+        string key = connections.ServerKey();
+        var candidate = new HubServer(mixer, key);
+        try
+        {
+            await candidate.StartAsync(cancellation);
+            cancellation.ThrowIfCancellationRequested();
+            server = candidate; output.Play();
+        }
+        catch { await candidate.DisposeAsync(); throw; }
+        PairingKey.Text = key; ServerButton.Content = "서버 중지"; OutputDevices.IsEnabled = false;
+        RefreshPairAddresses();
+        ExternalButton.IsEnabled = true;
+        ServerAddress.Text = "같은 네트워크에서는 QR 인증의 주소를 선택하세요.";
+        Status.Text = "서버 실행 중 · Android 앱에서 QR을 스캔하세요.";
+    }
+
+    private DeviceItem[] ReadOutputDevices()
+    {
+        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+        try { return devices.Select(d => new DeviceItem(d.ID, d.FriendlyName)).ToArray(); }
+        finally { foreach (var device in devices) device.Dispose(); }
+    }
+
+    private void RefreshPairAddresses()
+    {
+        string? previous = PairAddress.SelectedItem as string;
+        string[] addresses;
+        try
+        {
+            addresses = Dns.GetHostAddresses(Dns.GetHostName()).Where(a => a.AddressFamily == AddressFamily.InterNetwork)
+                .Select(a => $"http://{a}:17842").Where(IsLocalPairAddress).Distinct().ToArray();
+        }
+        catch (SocketException) { addresses = []; }
+        if (addresses.Length == 0) addresses = ["http://127.0.0.1:17842"];
+        if (externalAddress is not null) addresses = [.. addresses, externalAddress];
+        PairAddress.ItemsSource = addresses;
+        PairAddress.SelectedItem = addresses.Contains(previous) ? previous : addresses[0];
+    }
+
+    private void PairingSettingsOpened(object sender, RoutedEventArgs e)
+    { if (server is not null) RefreshPairAddresses(); }
+
+    private void SaveOutputDevice(DeviceItem selected)
+    {
+        var saved = new SavedOutputDevice(selected.Id, selected.Name);
+        deviceStore.Save(saved); savedOutput = saved; UpdateStartupOutput();
+    }
+
+    private void OutputDeviceChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (refreshingDevices || OutputDevices.SelectedItem is not DeviceItem selected) return;
+        try { SaveOutputDevice(selected); }
+        catch (Exception) { Status.Text = "출력 장치를 저장하지 못했습니다. 시작 설정을 확인하세요."; }
+    }
+
+    private void UpdateStartupOutput() => StartupOutput.Text = savedOutput is null
+        ? "자동 시작에 사용할 출력 장치를 선택하세요." : "자동 시작 출력: " + savedOutput.Name;
+
+    private void LoginStartupChanged(object sender, RoutedEventArgs e)
+    {
+        bool enable = LoginStartup.IsChecked == true;
+        try
+        {
+            if (enable)
+            {
+                if (OutputDevices.SelectedItem is not DeviceItem selected) throw new InvalidOperationException("출력 장치를 먼저 선택하세요.");
+                SaveOutputDevice(selected);
+                startupRegistration.Enable(Environment.ProcessPath!);
+                Status.Text = "다음 Windows 로그인부터 백그라운드에서 서버를 자동 시작합니다.";
+            }
+            else
+            {
+                startupRegistration.Disable(); automaticStart?.Cancel();
+                Status.Text = "로그인 시 자동 실행을 해제했습니다. 현재 실행 중인 서버는 유지됩니다.";
+            }
+        }
+        catch (Exception error) { LoginStartup.IsChecked = !enable; Status.Text = "시작 설정 저장 실패: " + error.Message; }
+    }
+
+    public void StartAutomatically()
+    {
+        if (LoginStartup.IsChecked != true || closing || !automaticStartTask.IsCompleted) return;
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
+        automaticStart = cancellation;
+        automaticStartTask = RunAutomaticStartAsync(cancellation);
+    }
+
+    private async Task RunAutomaticStartAsync(CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await AutomaticServerStart.RunAsync(async token =>
+            {
+                if (server is not null) return true;
+                if (busy || this.sender is not null || savedOutput is null) return false;
+                var selected = ReadOutputDevices().FirstOrDefault(d => d.Id == savedOutput.Id);
+                if (selected is null) return false;
+                busy = true;
+                try
+                {
+                    refreshingDevices = true;
+                    try { OutputDevices.ItemsSource = new[] { selected }; OutputDevices.SelectedItem = selected; }
+                    finally { refreshingDevices = false; }
+                    await StartServerAsync(selected, token);
+                    Status.Text = "로그인 후 서버를 자동 시작했습니다. 백그라운드에서 실행 중입니다.";
+                    return true;
+                }
+                catch { await StopServer(); throw; }
+                finally { busy = false; }
+            }, () => Status.Text = "서버 자동 시작 대기 중 · 저장된 출력 장치와 연결 상태를 확인하며 재시도합니다.", cancellation.Token);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        finally
+        {
+            if (automaticStart == cancellation) automaticStart = null;
+            cancellation.Dispose();
+        }
     }
 
     private async Task StopServer()
@@ -229,6 +358,7 @@ public partial class MainWindow : Window
 
     private async void ToggleSender(object sender, RoutedEventArgs e)
     {
+        automaticStart?.Cancel();
         if (busy || closing) return;
         busy = true;
         try
@@ -273,7 +403,7 @@ public partial class MainWindow : Window
 
     private void RefreshState()
     {
-        lifetime.SetStatus(server is not null ? "서버 실행 중" : sender is not null ? "음원 전송 중" : "대기 중");
+        lifetime.SetStatus(server is not null ? "서버 실행 중" : sender is not null ? "음원 전송 중" : automaticStart is not null ? "자동 시작 대기 중" : "대기 중");
         var state = mixer.Snapshot();
         if (!MasterVolume.IsMouseCaptureWithin) MasterVolume.Value = state.Settings.MasterVolume * 100;
         SourceSummary.Text = state.Sources.Length == 0 ? "연결 음원 없음" :
@@ -290,6 +420,7 @@ public partial class MainWindow : Window
     {
         closing = true;
         timer.Stop(); shutdown.Cancel();
+        await automaticStartTask;
         // Starting a server/sender/tunnel may still be awaiting I/O. Cancel and join it
         // before disposing resources, otherwise it could come alive during exit.
         while (busy) await Task.Delay(25);

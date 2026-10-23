@@ -29,7 +29,7 @@ Windows는 항상 **단일 EXE**를 배포합니다. `package-windows.ps1`은 �
 릴리스 APK와 Windows EXE, 체크섬을 생성·검증하고 해당 소스를 커밋·푸시한 뒤:
 
 ```powershell
-python scripts/publish-release.py --version 0.3.1 --notes docs/releases/v0.3.1.md --commit <커밋SHA>
+python scripts/publish-release.py --version 0.3.2 --notes docs/releases/v0.3.2.md --commit <커밋SHA>
 ```
 
 이 스크립트는 GitHub Releases API를 사용합니다. GitHub 커넥터에는 릴리스 생성/파일 업로드 기능이 없어 이 경로를 사용합니다. 인증 정보는 환경 변수 `GH_TOKEN`/`GITHUB_TOKEN` 또는 Git Credential Manager에서 메모리로 읽고 저장·출력하지 않습니다. 초안을 생성하고 자산 업로드·크기·digest 검증이 성공한 경우에만 시험 릴리스를 공개합니다. 같은 버전이 이미 있으면 실패하며 기존 배포를 덮어쓰지 않습니다.
