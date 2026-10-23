@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SoundManager.NetworkCheck",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SoundManager.Launcher", "src\SoundManager.Launcher\SoundManager.Launcher.csproj", "{5203545E-D24A-4FCA-BBD7-EB75AC7E1DD6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SoundManager.Windows.Tests", "tests\SoundManager.Windows.Tests\SoundManager.Windows.Tests.csproj", "{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -103,6 +105,18 @@ Global
 		{5203545E-D24A-4FCA-BBD7-EB75AC7E1DD6}.Release|x64.Build.0 = Release|Any CPU
 		{5203545E-D24A-4FCA-BBD7-EB75AC7E1DD6}.Release|x86.ActiveCfg = Release|Any CPU
 		{5203545E-D24A-4FCA-BBD7-EB75AC7E1DD6}.Release|x86.Build.0 = Release|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Debug|x64.Build.0 = Debug|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Debug|x86.Build.0 = Debug|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Release|x64.ActiveCfg = Release|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Release|x64.Build.0 = Release|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Release|x86.ActiveCfg = Release|Any CPU
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -114,5 +128,6 @@ Global
 		{4AD0B9C2-0A4B-4D52-A26B-6FE119B2E007} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{B2295C85-B357-443B-93F9-259E2FBDFE92} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{5203545E-D24A-4FCA-BBD7-EB75AC7E1DD6} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{259A6F9E-D8EE-4D4D-8799-995C4F6E431F} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

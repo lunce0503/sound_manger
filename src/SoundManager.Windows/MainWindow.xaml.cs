@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.Http;
@@ -20,6 +19,7 @@ public partial class MainWindow : Window
     private readonly Mixer mixer = new();
     private readonly MMDeviceEnumerator enumerator = new();
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly BackgroundWindowLifetime lifetime;
     private HubServer? server;
     private WasapiOut? output;
     private MMDevice? outputDevice;
@@ -42,7 +42,8 @@ public partial class MainWindow : Window
             if (saved is not null) { RemoteAddress.Text=saved.Address; RemoteKey.Text=saved.Key; }
         }
         catch (Exception) { Status.Text="저장된 연결을 불러오지 못했습니다. 연결 설정에서 다시 인증하세요."; }
-        timer.Tick += (_, _) => RefreshState(); timer.Start(); Closing += OnClosing;
+        lifetime = new BackgroundWindowLifetime(this, StopForExitAsync, () => Application.Current.Shutdown());
+        timer.Tick += (_, _) => RefreshState(); timer.Start();
     }
 
     private void RefreshDevices(object sender, RoutedEventArgs e)
@@ -59,7 +60,7 @@ public partial class MainWindow : Window
 
     private async void ToggleServer(object sender, RoutedEventArgs e)
     {
-        if (busy) return;
+        if (busy || closing) return;
         busy = true;
         try
         {
@@ -78,7 +79,12 @@ public partial class MainWindow : Window
                 };
                 string key = connections.ServerKey();
                 var candidate = new HubServer(mixer, key);
-                try { await candidate.StartAsync(); server = candidate; output.Play(); }
+                try
+                {
+                    await candidate.StartAsync(shutdown.Token);
+                    shutdown.Token.ThrowIfCancellationRequested();
+                    server = candidate; output.Play();
+                }
                 catch { await candidate.DisposeAsync(); throw; }
                 PairingKey.Text = key; ServerButton.Content = "서버 중지"; OutputDevices.IsEnabled = false;
                 var ips = Dns.GetHostAddresses(Dns.GetHostName()).Where(a => a.AddressFamily == AddressFamily.InterNetwork);
@@ -153,9 +159,14 @@ public partial class MainWindow : Window
     private async void ToggleExternal(object sender, RoutedEventArgs e)
     {
         if (tunnelStart is not null) { tunnelStart.Cancel(); return; }
-        if (busy || server is null) return;
-        if (tunnel is not null) { await StopExternal(); Status.Text = "외부 연결을 종료했습니다. LAN 연결을 사용할 수 있습니다."; return; }
+        if (busy || closing || server is null) return;
         busy = true;
+        if (tunnel is not null)
+        {
+            try { await StopExternal(); Status.Text = "외부 연결을 종료했습니다. LAN 연결을 사용할 수 있습니다."; }
+            finally { busy = false; }
+            return;
+        }
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
         tunnelStart = cancellation;
         ExternalButton.Content = "외부 연결 준비 취소";
@@ -218,7 +229,7 @@ public partial class MainWindow : Window
 
     private async void ToggleSender(object sender, RoutedEventArgs e)
     {
-        if (busy) return;
+        if (busy || closing) return;
         busy = true;
         try
         {
@@ -229,7 +240,11 @@ public partial class MainWindow : Window
                 var candidate = new AudioSender();
                 candidate.Failed += message => Dispatcher.BeginInvoke(async () =>
                 { await StopSender(); Status.Text = "전송 종료: " + message; });
-                try { await candidate.StartAsync(RemoteAddress.Text.Trim(), RemoteKey.Text.Trim(), Environment.MachineName); }
+                try
+                {
+                    await candidate.StartAsync(RemoteAddress.Text.Trim(), RemoteKey.Text.Trim(), Environment.MachineName, shutdown.Token);
+                    shutdown.Token.ThrowIfCancellationRequested();
+                }
                 catch { await candidate.DisposeAsync(); throw; }
                 this.sender = candidate; SendButton.Content = "음원 전송 중지";
                 connections.SaveClient(new PairingLink(RemoteAddress.Text.Trim(),RemoteKey.Text.Trim()));
@@ -258,17 +273,31 @@ public partial class MainWindow : Window
 
     private void RefreshState()
     {
+        lifetime.SetStatus(server is not null ? "서버 실행 중" : sender is not null ? "음원 전송 중" : "대기 중");
         var state = mixer.Snapshot();
         if (!MasterVolume.IsMouseCaptureWithin) MasterVolume.Value = state.Settings.MasterVolume * 100;
         SourceSummary.Text = state.Sources.Length == 0 ? "연결 음원 없음" :
             string.Join("\n", state.Sources.Select(s => $"{s.Name} · {s.Format.SampleRate} Hz · {s.Format.Encoding} · {s.BufferedMs:F0} ms · 방향 {s.Settings.Azimuth:F0}°"));
     }
 
-    private async void OnClosing(object? sender, CancelEventArgs e)
+    public void RestoreFromTray() => lifetime.Restore();
+
+    public void AllowSessionEnd() => lifetime.AllowSessionEnd();
+
+    private async void ExitApplication(object sender, RoutedEventArgs e) => await lifetime.ExitAsync();
+
+    private async Task StopForExitAsync()
     {
-        if (closing) return;
-        e.Cancel = true; closing = true; IsEnabled = false; timer.Stop(); shutdown.Cancel();
-        try { await StopSender(); await StopServer(); }
-        finally { enumerator.Dispose(); Close(); }
+        closing = true;
+        timer.Stop(); shutdown.Cancel();
+        // Starting a server/sender/tunnel may still be awaiting I/O. Cancel and join it
+        // before disposing resources, otherwise it could come alive during exit.
+        while (busy) await Task.Delay(25);
+        try { await StopSender(); }
+        finally
+        {
+            try { await StopServer(); }
+            finally { enumerator.Dispose(); shutdown.Dispose(); }
+        }
     }
 }

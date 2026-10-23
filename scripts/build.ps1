@@ -7,6 +7,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
     dotnet test tests/SoundManager.Tests -c Release --no-build
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+    dotnet test tests/SoundManager.Windows.Tests -c Release --no-build
+    if ($LASTEXITCODE -ne 0) { throw 'Windows lifecycle tests failed' }
     dotnet publish src/SoundManager.Windows -c Release -r win-x64 --self-contained true -o artifacts/windows
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
     & "$PSScriptRoot\prepare-tunnel.ps1"

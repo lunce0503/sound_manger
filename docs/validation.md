@@ -7,6 +7,7 @@
 ```powershell
 dotnet build SoundManager.sln -c Release
 dotnet test tests/SoundManager.Tests -c Release
+dotnet test tests/SoundManager.Windows.Tests -c Release
 cd android
 .\gradlew.bat assembleDebug lintDebug
 ```
@@ -20,6 +21,10 @@ cd android
 - 최종 출력 범위·전체 음량·클리핑 계수, NaN 오디오 차단.
 - 유효하지 않은 형식/설정/불완전 프레임 거부, 동시 수신/제어/렌더.
 - 실제 Kestrel HTTP/WebSocket에서 키 검사, 제어 값 검증, fragment 재조립, 오디오 수신, 비정상 패킷 거부, 연결 종료 후 소스 제거.
+- Windows WPF 창을 닫고 숨긴 뒤에도 HTTP 제어·WebSocket PCM 수신·믹싱 유지, 같은 창 복원, 완전 종료 후 서버 접근 종료.
+- 종료 중 중복 종료·복원 요청, 다른 실행 인스턴스의 복원 신호, 트레이 생성/정리 및 Windows 세션 종료 허용.
+
+2026-10-23 v0.3.1 검증: .NET Release 빌드 경고/오류 0개. 기존 .NET 테스트 39개와 Windows 수명 주기 회귀 테스트 4개 통과. Windows 테스트는 실제 WPF 창과 Kestrel을 사용하며 하드웨어로 소리를 재생하지 않습니다. 실제 Bluetooth 장시간 청취와 트레이 메뉴의 수동 조작은 별도 점검 대상입니다.
 
 2026-10-22 최종 검증:
 

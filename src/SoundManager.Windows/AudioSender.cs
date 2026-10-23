@@ -16,7 +16,7 @@ internal sealed class AudioSender : IAsyncDisposable
     private Task? sendTask;
     public event Action<string>? Failed;
 
-    public async Task StartAsync(string address, string key, string name)
+    public async Task StartAsync(string address, string key, string name, CancellationToken cancellation = default)
     {
         var uri = new Uri(PairingLink.NormalizeAddress(address));
         var endpoint = new UriBuilder(uri) { Scheme = uri.Scheme == "https" ? "wss" : "ws", Path = "/v1/audio", Query = "" }.Uri;
@@ -29,7 +29,7 @@ internal sealed class AudioSender : IAsyncDisposable
         var format = new AudioFormat(wave.SampleRate, wave.Channels, encoding);
         format.Validate();
         socket.Options.SetRequestHeader("X-Sound-Key", key);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop.Token, cancellation);
         timeout.CancelAfter(TimeSpan.FromSeconds(8));
         await socket.ConnectAsync(endpoint, timeout.Token);
         var hello = JsonSerializer.SerializeToUtf8Bytes(new AudioHello(1, name, format), new JsonSerializerOptions(JsonSerializerDefaults.Web));

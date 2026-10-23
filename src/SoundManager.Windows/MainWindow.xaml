@@ -1,7 +1,7 @@
 <Window x:Class="SoundManager.Windows.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Sound Manager 0.3.0" Width="900" Height="850" MinWidth="720" MinHeight="600"
+        Title="Sound Manager 0.3.1" Width="900" Height="850" MinWidth="720" MinHeight="600"
         Background="#101827" Foreground="#EDF3FF" FontFamily="Malgun Gothic">
     <Window.Resources>
         <Style TargetType="TextBlock"><Setter Property="Margin" Value="0,5,0,5"/></Style>
@@ -14,6 +14,10 @@
         <TextBlock Text="SOUND MANAGER" Foreground="#6EE7D0" FontSize="14" FontWeight="Bold"/>
         <TextBlock Text="모든 기기의 소리를 한곳으로" FontSize="28" FontWeight="Bold"/>
         <TextBlock Text="Windows 서버 · Android 원격 제어 · 원음 PCM 전송" Foreground="#A9BCD6"/>
+        <Border Background="#1E3047" Padding="12" CornerRadius="8" Margin="0,10,0,0">
+            <TextBlock Text="창을 닫아도 서버와 음원 전송은 계속됩니다. 작업 표시줄의 숨겨진 아이콘(트레이)에서 다시 열거나 완전 종료하세요."
+                       TextWrapping="Wrap" Foreground="#A9BCD6"/>
+        </Border>
         <Separator Margin="0,14"/>
         <TextBlock Text="01   통합 서버 / 무선 음향 출력" FontSize="18" FontWeight="Bold"/>
         <TextBlock Text="Bluetooth 기기를 Windows에 먼저 연결한 후 출력 장치를 선택하세요."/>
@@ -71,6 +75,7 @@
         <Border Background="#1E3047" Padding="14" CornerRadius="8" Margin="0,14,0,0">
             <TextBlock x:Name="Status" Text="준비됨" TextWrapping="Wrap"/>
         </Border>
+        <Button Content="완전 종료 (서버 중지)" Click="ExitApplication" HorizontalAlignment="Right" Margin="0,12,0,0"/>
     </StackPanel>
     </ScrollViewer>
 </Window>
