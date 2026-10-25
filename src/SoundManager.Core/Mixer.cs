@@ -49,6 +49,8 @@ public sealed class Mixer
         return true;
     }
 
+    public SourceSettings? GetSourceSettings(Guid id) => Volatile.Read(ref sources).FirstOrDefault(s => s.Id == id)?.Settings;
+
     public void Push(Guid id, ReadOnlySpan<byte> pcm)
     {
         var source = Volatile.Read(ref sources).FirstOrDefault(s => s.Id == id);

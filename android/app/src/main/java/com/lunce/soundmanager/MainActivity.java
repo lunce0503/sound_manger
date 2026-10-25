@@ -230,10 +230,13 @@ public final class MainActivity extends Activity {
     }
     private void showConnectHint() { Toast.makeText(this,"서버에 연결한 뒤 조정할 수 있습니다.",Toast.LENGTH_SHORT).show(); }
     private void send(String path,String json) {
+        send("PUT",path,json);
+    }
+    private void send(String method,String path,String json) {
         Api current=api; if (current==null || !connected) { showConnectHint(); return; }
         revision++;
         io.execute(()->{
-            try { current.call("PUT",path,new JSONObject(json)); }
+            try { current.call(method,path,new JSONObject(json)); }
             catch (Exception error) { runOnUiThread(()->{ if (api==current) connectionFailed(error); }); }
         });
     }
@@ -282,16 +285,25 @@ public final class MainActivity extends Activity {
     }
 
     private final class SourceCard {
-        final String id; final TextView name,details; final Switch muted; final Slider gain;
+        final String id; final TextView name; final Switch muted;
         JSONObject settings=new JSONObject(); String sourceName; boolean updating;
         SourceCard(JSONObject source) throws JSONException {
-            id=source.getString("id"); LinearLayout card=Ui.card(sources); name=Ui.title(card,source.getString("name"),19);
-            details=Ui.text(card,"연결됨",13,Ui.SUB);
-            muted=new Switch(MainActivity.this); muted.setText("음소거"); Ui.toggleStyle(muted); card.addView(muted,new LinearLayout.LayoutParams(-1,Ui.dp(MainActivity.this,56)));
+            id=source.getString("id"); LinearLayout card=Ui.card(sources); int pad=Ui.dp(MainActivity.this,12); card.setPadding(pad,pad,pad,pad);
+            LinearLayout row=Ui.row(MainActivity.this); card.addView(row);
+            name=Ui.title(row,source.getString("name"),17); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            name.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));
+            muted=new Switch(MainActivity.this); muted.setText("음소거"); Ui.toggleStyle(muted); row.addView(muted,new LinearLayout.LayoutParams(-2,Ui.dp(MainActivity.this,56)));
             muted.setCompoundDrawablePadding(Ui.dp(MainActivity.this,10));
-            muted.setOnCheckedChangeListener((view,checked)->{ updateMuteIcon(); if (!updating) { try { settings.put("muted",checked); save(); } catch (JSONException ignored) { } } });
-            gain=new Slider(card,"기기 음량",200,100,0,"%",value->{ if (!updating) { try { settings.put("volume",value/100d); save(); } catch (JSONException ignored) { } } });
-            Ui.button(card,"360° 방향 설정  ›",this::showDirection); updateMuteIcon();
+            muted.setOnCheckedChangeListener((view,checked)->{ updateMuteIcon(); if (!updating) { try { settings.put("muted",checked); patch(new JSONObject().put("muted",checked)); } catch (JSONException ignored) { } } });
+            ImageButton menu=new ImageButton(MainActivity.this); menu.setImageResource(R.drawable.ic_more_vert); menu.setBackgroundColor(Color.TRANSPARENT);
+            menu.setContentDescription("기기 설정"); row.addView(menu,new LinearLayout.LayoutParams(Ui.dp(MainActivity.this,48),Ui.dp(MainActivity.this,48)));
+            menu.setOnClickListener(v->{
+                PopupMenu popup=new PopupMenu(MainActivity.this,menu);
+                popup.getMenu().add(0,1,0,"음량 조절"); popup.getMenu().add(0,2,1,"이름 변경"); popup.getMenu().add(0,3,2,"360° 방향 설정");
+                popup.setOnMenuItemClickListener(item->{ if (item.getItemId()==1) showVolume(); else if (item.getItemId()==2) showRename(); else showDirection(); return true; });
+                popup.show();
+            });
+            updateMuteIcon();
         }
         private void updateMuteIcon() {
             muted.setCompoundDrawablesRelativeWithIntrinsicBounds(muted.isChecked()?R.drawable.ic_volume_off:R.drawable.ic_volume_on,0,0,0);
@@ -300,10 +312,30 @@ public final class MainActivity extends Activity {
         }
         void update(JSONObject source) throws JSONException {
             updating=true; sourceName=source.getString("name"); name.setText(sourceName); settings=source.getJSONObject("settings");
-            details.setText(settings.optBoolean("spatial")?getString(R.string.direction_summary,settings.optInt("azimuth")):"가상 방향 꺼짐");
-            gain.set((int)Math.round(settings.optDouble("volume",1)*100)); muted.setChecked(settings.optBoolean("muted")); updateMuteIcon(); updating=false;
+            muted.setChecked(settings.optBoolean("muted")); updateMuteIcon(); updating=false;
         }
-        private void save() { send("/v1/sources/"+id,settings.toString()); }
+        private void patch(JSONObject values) { send("PATCH","/v1/sources/"+id,values.toString()); }
+        private void showVolume() {
+            if (!connected) { showConnectHint(); return; }
+            LinearLayout content=Ui.column(MainActivity.this); Dialog dialog=settingsDialog("음량 조절",content);
+            Ui.text(content,sourceName,14,Ui.SUB);
+            Slider gain=new Slider(content,"기기 음량",200,(int)Math.round(settings.optDouble("volume",1)*100),0,"%",v->{});
+            Ui.button(content,"적용",()->{ try { patch(new JSONObject().put("volume",gain.value()/100d)); dialog.dismiss(); } catch (JSONException ignored) {} });
+            Ui.button(content,"취소",dialog::dismiss); showDialog(dialog);
+        }
+        private void showRename() {
+            if (!connected) { showConnectHint(); return; }
+            EditText input=new EditText(MainActivity.this); input.setSingleLine(true); input.setText(sourceName); input.selectAll();
+            input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(64)});
+            AlertDialog dialog=new AlertDialog.Builder(MainActivity.this).setTitle("이름 변경").setView(input)
+                .setNegativeButton("취소",null).setNeutralButton("원래 이름으로",(d,w)->{ try { patch(new JSONObject().put("resetName",true)); } catch (JSONException ignored) {} })
+                .setPositiveButton("적용",null).create();
+            dialog.show(); dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+                String value=input.getText().toString().trim();
+                if (value.isEmpty() || value.chars().anyMatch(Character::isISOControl)) { input.setError("이름을 입력하세요."); return; }
+                try { patch(new JSONObject().put("displayName",value)); dialog.dismiss(); } catch (JSONException ignored) {}
+            });
+        }
         private void showDirection() {
             if (!connected) { showConnectHint(); return; }
             LinearLayout content=Ui.column(MainActivity.this); Dialog dialog=settingsDialog("360° 방향 설정",content);
@@ -315,7 +347,7 @@ public final class MainActivity extends Activity {
             content.addView(view[0],new LinearLayout.LayoutParams(-1,0,1));
             Ui.text(content,"표시된 점을 잡아 방향을 움직이세요.",13,Ui.SUB);
             Ui.button(content,"적용",()->{
-                try { settings.put("azimuth",angle.value()).put("spatial",spatial.isChecked()); save(); dialog.dismiss(); }
+                try { patch(new JSONObject().put("azimuth",angle.value()).put("spatial",spatial.isChecked())); dialog.dismiss(); }
                 catch (JSONException ignored) { }
             });
             Ui.button(content,"취소",dialog::dismiss);

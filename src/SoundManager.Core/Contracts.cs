@@ -35,10 +35,18 @@ public sealed record MixSettings(float MasterVolume = 0.7f, float BassDb = 0,
 }
 
 public sealed record SourceSettings(float Volume = 1, float Azimuth = 0,
-    bool Spatial = false, bool Muted = false)
+    bool Spatial = false, bool Muted = false, string? DisplayName = null)
 {
     [JsonIgnore] public bool IsValid => float.IsFinite(Volume) && Volume is >= 0 and <= 2 &&
-        float.IsFinite(Azimuth) && Azimuth is >= 0 and < 360;
+        float.IsFinite(Azimuth) && Azimuth is >= 0 and < 360 &&
+        (DisplayName is null || !string.IsNullOrWhiteSpace(DisplayName) && DisplayName.Length <= 64 && !DisplayName.Any(char.IsControl));
+}
+
+public sealed record SourceSettingsPatch(float? Volume = null, float? Azimuth = null,
+    bool? Spatial = null, bool? Muted = null, string? DisplayName = null, bool ResetName = false)
+{
+    public SourceSettings Apply(SourceSettings current) => new(Volume ?? current.Volume, Azimuth ?? current.Azimuth,
+        Spatial ?? current.Spatial, Muted ?? current.Muted, ResetName ? null : DisplayName ?? current.DisplayName);
 }
 
 public sealed record SourceState(Guid Id, string Name, AudioFormat Format,

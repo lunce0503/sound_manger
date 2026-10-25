@@ -1,6 +1,7 @@
 package com.lunce.soundmanager;
 
 import android.app.Dialog;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.view.*;
 import android.widget.*;
@@ -44,12 +45,20 @@ public class InteractionTest {
     private View button(MainActivity activity,String text) {
         return all(activity.getWindow().getDecorView()).stream().filter(v->v instanceof Button && ((Button)v).getText().toString().contains(text)).findFirst().orElseThrow(AssertionError::new);
     }
+    private void sourceMenu(MainActivity activity,int item) {
+        View more=all(activity.getWindow().getDecorView()).stream().filter(v->v instanceof ImageButton && "기기 설정".contentEquals(v.getContentDescription())).findFirst().orElseThrow(AssertionError::new);
+        more.performClick();
+        PopupMenu popup=org.robolectric.shadows.ShadowPopupMenu.getLatestPopupMenu();
+        assertNotNull(popup); assertTrue(popup.getMenu().performIdentifierAction(item,0)); popup.dismiss();
+    }
     @Test public void homeHidesCredentialsEqSlidersAndDirectionSurface() throws Exception {
         MainActivity activity=activity(); withDevice(activity);
         List<View> views=all(activity.getWindow().getDecorView());
         assertFalse(views.stream().anyMatch(v->v instanceof EditText || v instanceof DirectionView));
         assertTrue(views.stream().anyMatch(v->v instanceof TextView && ((TextView)v).getText().toString().equals("전체 음량")));
         assertFalse(views.stream().anyMatch(v->v instanceof TextView && ((TextView)v).getText().toString().equals("저음")));
+        assertFalse(views.stream().anyMatch(v->v instanceof SeekBar && "기기 음량".contentEquals(v.getContentDescription())));
+        assertTrue(views.stream().anyMatch(v->v instanceof ImageButton && "기기 설정".contentEquals(v.getContentDescription())));
     }
 
     @Test public void reconnectedSourceCardShowsRestoredVolumePositionAndMute() throws Exception {
@@ -59,9 +68,12 @@ public class InteractionTest {
         List<View> views=all(activity.getWindow().getDecorView());
         Switch mute=(Switch)views.stream().filter(v->v instanceof Switch && ((Switch)v).getText().toString().equals("음소거")).findFirst().orElseThrow(AssertionError::new);
         assertTrue(mute.isChecked());
-        SeekBar gain=(SeekBar)views.stream().filter(v->v instanceof SeekBar && "기기 음량".contentEquals(v.getContentDescription())).findFirst().orElseThrow(AssertionError::new);
+        sourceMenu(activity,1); Dialog volume=org.robolectric.shadows.ShadowDialog.getLatestDialog();
+        SeekBar gain=(SeekBar)all(volume.getWindow().getDecorView()).stream().filter(v->v instanceof SeekBar && "기기 음량".contentEquals(v.getContentDescription())).findFirst().orElseThrow(AssertionError::new);
         assertEquals(35,gain.getProgress());
-        assertTrue(views.stream().anyMatch(v->v instanceof TextView && ((TextView)v).getText().toString().contains("275")));
+        volume.dismiss(); sourceMenu(activity,3); Dialog direction=org.robolectric.shadows.ShadowDialog.getLatestDialog();
+        assertTrue(all(direction.getWindow().getDecorView()).stream().anyMatch(v->v instanceof TextView && ((TextView)v).getText().toString().contains("275")));
+        direction.dismiss();
     }
     @Test public void muteHasReadableLabelSpeakerIconAndToggleState() throws Exception {
         MainActivity activity=activity(); withDevice(activity);
@@ -71,7 +83,7 @@ public class InteractionTest {
     }
     @Test public void directionAndEqualizerOpenInSeparateWindows() throws Exception {
         MainActivity activity=activity(); withDevice(activity);
-        button(activity,"360° 방향 설정").performClick();
+        sourceMenu(activity,3);
         Dialog direction=org.robolectric.shadows.ShadowDialog.getLatestDialog(); assertTrue(direction.isShowing());
         View surface=all(direction.getWindow().getDecorView()).stream().filter(v->v instanceof DirectionView).findFirst().orElseThrow(AssertionError::new);
         for (android.view.ViewParent parent=surface.getParent();parent!=null;parent=parent.getParent()) assertFalse(parent instanceof ScrollView);
@@ -79,6 +91,25 @@ public class InteractionTest {
         Dialog eq=org.robolectric.shadows.ShadowDialog.getLatestDialog(); assertTrue(eq.isShowing());
         assertTrue(all(eq.getWindow().getDecorView()).stream().anyMatch(v->v instanceof TextView && ((TextView)v).getText().toString().equals("저음")));
         eq.dismiss();
+    }
+    @Test public void renameMenuSendsOnlyAnAliasPatchAndVolumeLivesInItsOwnDialog() throws Exception {
+        try (okhttp3.mockwebserver.MockWebServer server=new okhttp3.mockwebserver.MockWebServer()) {
+            server.setDispatcher(new okhttp3.mockwebserver.Dispatcher() {
+                @Override public okhttp3.mockwebserver.MockResponse dispatch(okhttp3.mockwebserver.RecordedRequest request) {
+                    return new okhttp3.mockwebserver.MockResponse().setBody("{}");
+                }
+            });
+            server.start(java.net.InetAddress.getByName("127.0.0.1"),0);
+            MainActivity activity=activity(); withDevice(activity);
+            ReflectionHelpers.setField(activity,"api",new Api("http://127.0.0.1:"+server.getPort(),"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+            sourceMenu(activity,2); AlertDialog dialog=(AlertDialog)org.robolectric.shadows.ShadowDialog.getLatestDialog();
+            EditText input=(EditText)all(dialog.getWindow().getDecorView()).stream().filter(v->v instanceof EditText).findFirst().orElseThrow(AssertionError::new);
+            input.setText("내 음악 PC"); dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+            okhttp3.mockwebserver.RecordedRequest request=null;
+            for (int i=0;i<4;i++) { request=server.takeRequest(1,java.util.concurrent.TimeUnit.SECONDS); if (request!=null && "PATCH".equals(request.getMethod())) break; }
+            assertNotNull(request); assertEquals("PATCH",request.getMethod()); assertEquals("/v1/sources/device1",request.getPath());
+            JSONObject patch=new JSONObject(request.getBody().readUtf8()); assertEquals(1,patch.length()); assertEquals("내 음악 PC",patch.getString("displayName"));
+        }
     }
     @Test public void scrollTouchOutsideHandleDoesNotClaimGestureOrChangeDirection() {
         AtomicInteger changes=new AtomicInteger(); LinearLayout parent=new LinearLayout(context);

@@ -2,13 +2,14 @@
 
 여러 Windows·Android 기기의 재생음을 Windows 서버에서 합쳐 Bluetooth 이어폰·스피커로 출력하는 초기 MVP입니다. Android 앱에서 QR로 연결하고 전체 음량, EQ와 음원별 방향을 조정합니다. 외부 네트워크에서는 앱의 Cloudflare HTTPS 터널을 사용할 수 있습니다.
 
-[v0.3.3 릴리스 및 다운로드](https://github.com/lunce0503/sound_manger/releases/tag/v0.3.3) · [변경 사항](docs/releases/v0.3.3.md)
+[v0.4.0 릴리스 및 다운로드](https://github.com/lunce0503/sound_manger/releases/tag/v0.4.0) · [변경 사항](docs/releases/v0.4.0.md)
 
 ```mermaid
 flowchart LR
     A[Windows 클라이언트\nWASAPI loopback] -->|원본 캡처 PCM + 형식| S
     B[Android 클라이언트\nAudioPlaybackCapture] -->|48 kHz PCM16 stereo| S
     C[Android 제어 화면] -->|음량 · EQ · 방향| S
+    D[Chrome / Edge 탭 확장] -->|탭별 원본 캡처 PCM| S
     S[Windows 서버\n버퍼 · 형식 변환 · 공간 처리\n믹싱 · EQ · 출력 제한] --> O[Windows 출력 장치]
     O --> H[Bluetooth 이어폰 / 스피커]
 ```
@@ -18,13 +19,14 @@ flowchart LR
 - **Windows**: 서버/클라이언트 중 한 역할 선택. WASAPI 캡처/출력, 연결 QR·연결 코드, 선택적 외부 HTTPS 터널, 음량 및 EQ 프리셋. 창을 닫으면 트레이에서 서버·출력·전송을 유지합니다. 기기별 음량·음소거·방향·공간 효과 설정을 저장해 재연결 시 복원합니다.
 - **Android 10 이상**: QR로 한 번 인증한 뒤 자동 재연결. 전체 음량과 기기 목록이 있는 기본 화면, 별도 EQ·방향 설정 창, 스피커 아이콘·음소거 글자·스위치. 주소/키는 연결 관리 안에서만 입력합니다. 재생 오디오 전송과 알림에서 전송 중지를 지원합니다.
 - **서버 코어**: 최대 16개 음원, PCM16/float32 LE, 모노/스테레오, 8–192 kHz 입력. 서버에서 48 kHz float stereo로 변환하고 혼합. 입력별 제한된 버퍼, 언더런 재버퍼링, 소규모 클럭 드리프트 보정, 최종 출력 ±1 제한과 클리핑 계수.
+- **Chrome·Edge 데스크톱 116 이상**: 탭마다 독립된 음원으로 전송합니다. 확장 팝업을 닫아도 계속 전송하며 서버 연결이 끊기면 재연결합니다. 브라우저 재시작 후에는 탭에서 전송을 다시 시작합니다.
 - **EQ**: 120 Hz 저음 shelf, 4 kHz 고음 shelf, 2.5 kHz presence peaking, 각 ±12 dB. 기본/저음 강조/고음 강조/부드럽게/선명하게 프리셋.
 - **가상 방향**: 좌우 레벨 차, 최대 약 0.63 ms 귀간 지연, 후방 고주파 감쇠. HRTF·머리 추적·실제 다채널 360° 렌더러는 아직 구현하지 않았습니다. 스피커와 청취 환경에 따라 전후 구별이 제한됩니다. 방향 사용 시 해당 스테레오 입력을 모노로 합쳐 배치하며, 꺼두면 좌우 채널을 유지합니다.
 
 ## 실행
 
 1. Windows 서버 PC에 Bluetooth 이어폰/스피커를 페어링합니다.
-2. 배포한 `SoundManager-0.3.3-windows-x64.exe`를 실행합니다. 필요한 파일이 사용자 앱 폴더에 자동으로 풀리고 앱이 열립니다. 출력 장치를 선택한 뒤 **서버 시작**을 누릅니다.
+2. 배포한 `SoundManager-0.4.0-windows-x64.exe`를 실행합니다. 필요한 파일이 사용자 앱 폴더에 자동으로 풀리고 앱이 열립니다. 출력 장치를 선택한 뒤 **서버 시작**을 누릅니다.
 3. Windows 방화벽 알림에서는 사용하는 **개인 네트워크** 접근을 허용합니다. 수동 설정이 필요한 경우 서버 TCP `17842`를 같은 LAN에 허용합니다.
 4. Windows의 **새 기기 연결 · QR 인증**을 펼쳐 휴대폰과 같은 네트워크의 주소를 선택합니다. Android의 **연결 관리 → QR로 서버 연결**에서 스캔하고 주소를 확인하여 연결합니다. 카메라 없이 연결 코드를 붙여넣거나 연결 관리의 **주소와 키로 연결**을 사용할 수도 있습니다.
 5. Android에서 **재생음 전송 시작**을 누르고 오디오 권한 및 시스템 캡처 승인을 합니다. 캡처 가능한 앱에서 음악을 재생합니다. 서버의 출력 장치로 합산된 음원이 재생됩니다.
@@ -34,13 +36,31 @@ flowchart LR
 
 ### 기기별 음량·음원 위치 유지
 
-Windows 서버와 음원을 보내는 Windows/Android 앱을 모두 v0.3.3 이상으로 업데이트하세요. 기기별 음량·음소거·방향 각도·공간 효과 사용 여부를 바꾸면 서버가 즉시 저장합니다. 연결 종료, 캡처 재시작, 네트워크 단절 후 재연결 및 서버 앱 재시작에도 마지막으로 저장한 설정을 복원합니다. 연결이 끊긴 음원은 활성 기기 목록에서 사라지지만 저장된 설정은 유지됩니다.
+Windows 서버와 음원을 보내는 Windows/Android 앱을 모두 v0.4.0 이상으로 업데이트하세요. 기기별 음량·음소거·방향 각도·공간 효과 사용 여부를 바꾸면 서버가 즉시 저장합니다. 연결 종료, 캡처 재시작, 네트워크 단절 후 재연결 및 서버 앱 재시작에도 마지막으로 저장한 설정을 복원합니다. 연결이 끊긴 음원은 활성 기기 목록에서 사라지지만 저장된 설정은 유지됩니다.
 
 각 전송 앱은 무작위 기기 ID를 보관해 모델명이나 PC 이름이 같아도 구분합니다. 이름을 바꿔도 ID가 같으면 같은 설정을 적용하며, 새 연결의 첫 PCM을 처리하기 전에 복원합니다. 이전 연결이 아직 시간 초과되지 않았어도 재연결이 기존 연결을 교체합니다. 전체 음량·EQ는 기기 연결/해제로 변경하지 않습니다.
 
 서버 설정 파일은 `%LOCALAPPDATA%/SoundManager/source-settings.json`, Windows 전송 기기 ID는 `%LOCALAPPDATA%/SoundManager/client-device-id.txt`에 보관합니다. Android는 앱 전용 저장소에 ID를 유지합니다. 앱 업데이트와 인증 정보 변경은 ID를 지우지 않습니다. 앱 데이터/ID 파일 삭제 또는 앱 재설치로 ID가 사라지면 새 기기로 처리합니다. ID는 인증 키나 하드웨어 식별자가 아닙니다.
 
 ID를 보내지 않는 이전 전송 앱도 연결되지만 기기별 자동 복원을 지원하지 않습니다. 저장 실패는 오류로 알리고 이전 설정을 유지하며, 손상된 저장 파일을 자동으로 덮어쓰지 않습니다. v0.3.2까지의 앱은 기기별 설정을 저장하지 않았으므로 업데이트 후 지정한 설정부터 유지됩니다.
+
+### 기기 목록과 서버에서 조절
+
+Windows 서버와 Android 앱의 목록 행은 **이름 · 스피커 아이콘과 음소거 토글 · ⋮**로 구성합니다. **⋮ → 음량 조절 / 이름 변경 / 360° 방향 설정**에서 조절합니다. 음량은 0–200%, 이름은 1–64자입니다. **원래 이름으로**로 사용자 지정 이름을 해제합니다. Windows 서버에서 직접 바꾼 설정도 저장하고 휴대폰에 반영합니다. 변경한 항목만 업데이트해 다른 컨트롤의 설정을 덮어쓰지 않습니다.
+
+### Chrome·Edge 탭별 전송
+
+1. 최신 Windows EXE에서 **브라우저 탭 연결 → 브라우저 확장 설치 폴더 열기**를 누릅니다.
+2. Chrome의 `chrome://extensions` 또는 Edge의 `edge://extensions`에서 개발자 모드를 켜고 **압축해제된 확장 프로그램 로드**로 열린 폴더를 선택합니다. 로컬 확장으로 배포합니다. [Chrome 설치 안내](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked)
+3. 서버의 **새 기기 연결 · QR 인증 → 연결 코드 복사**로 복사한 코드를 전송할 탭의 Sound Manager 확장 → **서버 연결 관리**에 붙여넣습니다. 해당 서버 호스트의 접근 권한을 허용하면 인증을 저장합니다.
+4. **새 탭 음원 → 이 탭 전송 시작**을 누릅니다. 다른 탭에서도 반복하면 각각 서버·휴대폰 목록에 나타납니다. 각 행의 음소거와 ⋮ 메뉴로 조절합니다. 팝업을 닫아도 전송합니다.
+5. 탭이나 브라우저를 다시 열었을 때는 **저장된 탭 설정**에서 기존 항목을 골라 전송하면 이전 설정을 복원합니다. 같은 항목은 동시에 두 탭에서 사용하지 않습니다.
+
+캡처는 사용자가 확장을 실행한 탭에서 시작해야 합니다. [공식 탭 캡처 API](https://developer.chrome.com/docs/extensions/reference/api/tabCapture) 전송 중인 탭의 소리는 서버 출력으로 전달되며 원래 탭의 로컬 재생은 억제됩니다. 탭 전송을 사용할 때 해당 PC의 전체 재생음 전송은 중지해 중복 전송과 출력 재입력을 피하세요. 캡처 금지·DRM 음원이나 브라우저 내부 페이지는 지원하지 않을 수 있습니다. Android 모바일 브라우저의 탭 캡처는 지원 범위에 포함하지 않습니다.
+
+확장은 주소와 키를 AES-GCM으로 암호화해 확장 전용 저장소에 저장합니다. 암호화 키는 브라우저 프로필의 IndexedDB에 비추출 CryptoKey로 보관하며 OS 하드웨어 키 저장소의 보호를 보장하지 않습니다. 키를 URL·기본 화면·동기화 저장소에 넣지 않습니다. 브라우저 프로필/확장 데이터를 지우면 연결과 탭 ID가 사라집니다.
+
+확장 폴더는 `%LOCALAPPDATA%/SoundManager/browser-extension`으로 유지합니다. 앱 업데이트 후 설치 폴더 열기를 다시 누르고 확장 관리에서 새로고침하세요. 같은 공개 확장 ID를 사용하므로 확장을 삭제하지 않고 새로고침하면 저장된 연결과 탭 설정을 유지합니다.
 
 ### Windows 백그라운드 실행
 
@@ -75,12 +95,13 @@ Windows에 로그인한 상태에서 앱이 실행되어 있어야 합니다. PC
 
 ## 개발 및 빌드
 
-Windows 빌드에는 .NET 10 SDK, Android 빌드에는 JDK 17 또는 21, Android SDK 35 / Build Tools 35.0.0이 필요합니다. Android Studio에서 `android` 폴더를 열어도 됩니다. Gradle Wrapper 8.11.1과 Android Gradle Plugin 8.9.2를 고정했습니다.
+Windows 빌드에는 .NET 10 SDK와 Node.js 24, Android 빌드에는 JDK 17 또는 21, Android SDK 35 / Build Tools 35.0.0이 필요합니다. Android Studio에서 `android` 폴더를 열어도 됩니다. Gradle Wrapper 8.11.1과 Android Gradle Plugin 8.9.2를 고정했습니다.
 
 ```powershell
 dotnet build SoundManager.sln -c Release
 dotnet test tests/SoundManager.Tests -c Release
 dotnet test tests/SoundManager.Windows.Tests -c Release
+node --test browser-extension/tests/*.test.js
 dotnet run --project src/SoundManager.Windows
 
 # Android: ANDROID_HOME 설정 또는 android/local.properties에 sdk.dir 지정
@@ -97,8 +118,22 @@ cd android
 
 - Windows 개발용 실행 폴더: `artifacts/windows/SoundManager.Windows.exe` (x64, .NET 런타임 포함). 사용자 배포에는 아래의 단일 EXE를 사용합니다.
 - Android 개발용: `artifacts/android/SoundManager-debug.apk`.
-- 릴리스: `scripts/release.ps1`로 **단일 Windows EXE**와 **릴리스 서명 APK**, `SHA256SUMS.txt`를 `artifacts/release/v0.3.3`에 생성합니다. Windows 배포는 앞으로 항상 EXE이며 ZIP은 내부 패키징에만 사용합니다. EXE는 구성 파일 무결성을 확인하고 `%LOCALAPPDATA%/SoundManager/versions`에 풀어 실행합니다. Android 서명 키는 `%LOCALAPPDATA%/SoundManager/release-signing`에 보관하며 업데이트를 위해 보존해야 합니다. [릴리스·서명 안내](docs/releasing.md)
+- 릴리스: `scripts/release.ps1`로 **단일 Windows EXE**와 **릴리스 서명 APK**, `SHA256SUMS.txt`를 `artifacts/release/v0.4.0`에 생성합니다. Windows 배포는 앞으로 항상 EXE이며 ZIP은 내부 패키징에만 사용합니다. EXE는 구성 파일 무결성을 확인하고 `%LOCALAPPDATA%/SoundManager/versions`에 풀어 실행합니다. Android 서명 키는 `%LOCALAPPDATA%/SoundManager/release-signing`에 보관하며 업데이트를 위해 보존해야 합니다. [릴리스·서명 안내](docs/releasing.md)
 - CI: push/PR마다 Windows 빌드·테스트, Android APK 빌드·lint를 실행하고 GitHub Actions artifact로 저장합니다.
+
+### 실제 브라우저 캡처 검증
+
+실제 브라우저 캡처 회귀 검증은 다음처럼 실행합니다. 격리된 프로필과 로컬 합성 음원만 사용하며 사용자 탭·실제 오디오 출력 장치를 사용하지 않습니다.
+
+```powershell
+dotnet build tools/SoundManager.BrowserCheck -c Release
+cd browser-extension
+npm ci
+npx playwright install chromium
+npm run e2e
+```
+
+빌드가 완료된 뒤 테스트를 실행하세요. 실행 중인 테스트 서버의 파일을 다시 빌드하지 않습니다. CI도 빌드·브라우저 검증을 순서대로 수행합니다.
 
 ## 현재 제약
 
@@ -119,6 +154,8 @@ cd android
 | `src/SoundManager.Server` | 인증된 REST 제어 및 WebSocket PCM 수신 |
 | `src/SoundManager.Windows` | WPF 앱, WASAPI 출력/캡처 |
 | `src/SoundManager.Launcher` | 구성 파일을 포함한 단일 EXE 실행기 |
+| `browser-extension` | Chrome·Edge 탭 캡처, 암호화 인증 저장, 원본 PCM 전송 |
+| `tools/SoundManager.BrowserCheck` | 실브라우저 캡처 테스트용 로컬 서버, 하드웨어 재생 없음 |
 | `android/app` | Android 제어 화면 및 재생음 캡처 서비스 |
 | `tests/SoundManager.Tests` | DSP 및 실제 HTTP/WebSocket 통합 테스트 |
 | `tests/SoundManager.Windows.Tests` | WPF 창 닫기·복원·종료 및 백그라운드 서버 회귀 테스트 |
@@ -126,4 +163,4 @@ cd android
 | `docs/protocol.md` | 통신 규격 |
 | `docs/validation.md` | 빌드/테스트 결과와 실기기 점검 절차 |
 
-MIT 라이선스. 현재 버전 `0.3.3` (시험 배포). 포함한 라이브러리·터널 도구의 라이선스는 `THIRD-PARTY-NOTICES.md`를 참조하세요.
+MIT 라이선스. 현재 버전 `0.4.0` (시험 배포). 포함한 라이브러리·터널 도구의 라이선스는 `THIRD-PARTY-NOTICES.md`를 참조하세요.

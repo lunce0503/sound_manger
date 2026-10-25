@@ -13,12 +13,27 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - run: dotnet build SoundManager.sln -c Release
       - run: dotnet test tests/SoundManager.Tests -c Release --no-build
       - run: dotnet test tests/SoundManager.Windows.Tests -c Release --no-build
+      - run: node --test browser-extension/tests/*.test.js
+      - name: Install isolated browser test runtime
+        working-directory: browser-extension
+        run: |
+          npm ci
+          npx playwright install chromium
+      - name: Verify real tab audio capture
+        timeout-minutes: 5
+        working-directory: browser-extension
+        run: npm run e2e
       - run: dotnet publish src/SoundManager.Windows -c Release -r win-x64 --self-contained true -o artifacts/windows
       - shell: pwsh
         run: ./scripts/prepare-tunnel.ps1
+      - shell: pwsh
+        run: ./scripts/prepare-browser.ps1
       - shell: pwsh
         run: ./scripts/package-windows.ps1
       - name: Verify standalone EXE extraction
@@ -28,7 +43,7 @@ jobs:
           $target = Join-Path $PWD 'artifacts/exe-check'
           $process = Start-Process -FilePath $exe -ArgumentList '--extract-only',$target -WindowStyle Hidden -PassThru -Wait
           if ($process.ExitCode -ne 0) { throw 'EXE extraction failed' }
-          foreach ($name in @('SoundManager.Windows.exe','SoundManager.Windows.dll','cloudflared.exe')) {
+          foreach ($name in @('SoundManager.Windows.exe','SoundManager.Windows.dll','cloudflared.exe','browser-extension/manifest.json','browser-extension/offscreen.js')) {
             if ((Get-FileHash "artifacts/windows/$name").Hash -ne (Get-FileHash "$target/$name").Hash) { throw "File mismatch: $name" }
           }
       - uses: actions/upload-artifact@v4

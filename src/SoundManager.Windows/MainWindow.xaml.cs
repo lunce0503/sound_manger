@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly MMDeviceEnumerator enumerator = new();
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly BackgroundWindowLifetime lifetime;
+    private readonly SourceListView sourceList;
     private readonly StartupRegistration startupRegistration = new();
     private readonly OutputDeviceStore deviceStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "SoundManager", "output-device.json"));
@@ -41,6 +42,13 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        sourceList = new SourceListView((id, changes) =>
+        {
+            var result = server?.UpdateSource(id, changes) ?? SourceUpdateResult.NotFound;
+            sourceList!.Refresh(mixer.Snapshot().Sources);
+            return result;
+        });
+        SourceListHost.Children.Add(sourceList);
         try
         {
             savedOutput = deviceStore.Load();
@@ -407,8 +415,19 @@ public partial class MainWindow : Window
         lifetime.SetStatus(server is not null ? "서버 실행 중" : sender is not null ? "음원 전송 중" : automaticStart is not null ? "자동 시작 대기 중" : "대기 중");
         var state = mixer.Snapshot();
         if (!MasterVolume.IsMouseCaptureWithin) MasterVolume.Value = state.Settings.MasterVolume * 100;
-        SourceSummary.Text = state.Sources.Length == 0 ? "연결 음원 없음" :
-            string.Join("\n", state.Sources.Select(s => $"{s.Name} · {s.Format.SampleRate} Hz · {s.Format.Encoding} · {s.BufferedMs:F0} ms · 방향 {s.Settings.Azimuth:F0}°"));
+        sourceList.Refresh(state.Sources);
+    }
+
+    private void OpenBrowserExtension(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string target = BrowserExtensionFiles.Prepare(Path.Combine(AppContext.BaseDirectory, "browser-extension"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoundManager", "browser-extension"));
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true });
+            Status.Text = "Chrome·Edge 확장 관리에서 개발자 모드를 켜고 열린 폴더를 로드하세요.";
+        }
+        catch (Exception) { Status.Text = "확장 파일을 준비하지 못했습니다. 최신 배포 EXE를 확인하세요."; }
     }
 
     public void RestoreFromTray() => lifetime.Restore();

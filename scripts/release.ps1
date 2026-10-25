@@ -1,4 +1,4 @@
-param([string]$Version = '0.3.3')
+param([string]$Version = '0.4.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected semantic version, for example 0.2.0' }

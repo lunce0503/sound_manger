@@ -4,6 +4,10 @@
 
 ## 자동 검증
 
+2026-10-25 v0.4.0 검증: 서버 테스트 53개, Windows 테스트 14개, 브라우저 확장 단위 테스트 7개 통과. Windows 목록은 이름·음소거·⋮만 표시하고 메뉴에서 음량/이름/방향을 조절하는 WPF 테스트를 포함합니다. Android는 기기 메뉴와 PATCH 이름 변경을 포함한 20개 테스트가 통과했습니다.
+
+격리된 Chrome for Testing 151에서 실제 두 웹 탭을 캡처해 서버의 float32 PCM 수신·믹싱을 확인했습니다. 팝업 종료 후 전송, 탭별 서버 음량·음소거·별칭, 브라우저 프로세스 종료/재시작 후 암호화 인증 및 저장한 탭 설정 복원을 검증했습니다. `tools/SoundManager.BrowserCheck`는 localhost에서만 열리고 오디오 출력 장치를 열지 않습니다. 실제 Bluetooth 청취는 별도입니다. 테스트 복사본은 로컬 테스트 호스트만 미리 허용하며 배포 확장은 사용자가 서버 호스트 권한을 승인해야 합니다.
+
 ```powershell
 dotnet build SoundManager.sln -c Release
 dotnet test tests/SoundManager.Tests -c Release

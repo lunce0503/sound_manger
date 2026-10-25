@@ -1,4 +1,4 @@
-param([string]$Version = '0.3.3')
+param([string]$Version = '0.4.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $payloadRoot = Join-Path $repoRoot 'artifacts/launcher'

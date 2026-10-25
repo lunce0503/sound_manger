@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>Sound Manager</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+ <header><span>SOUND MANAGER</span><h1>이 탭의 소리</h1></header>
+ <p id="tab-name"></p>
+ <label for="profile">저장된 탭 설정</label>
+ <select id="profile"><option value="">새 탭 음원</option></select>
+ <button id="start" disabled>이 탭 전송 시작</button><button id="stop" hidden>전송 중지</button>
+ <p id="status" role="status" aria-live="polite">불러오는 중…</p>
+ <p class="hint">탭마다 전송을 시작하면 서버와 휴대폰에서 음량·음소거·이름을 따로 조절할 수 있습니다.</p>
+ <details id="connection"><summary>서버 연결 관리</summary>
+  <label for="pairing">서버에서 복사한 연결 코드</label>
+  <textarea id="pairing" rows="3" autocomplete="off" spellcheck="false" placeholder="soundmanager://pair?…"></textarea>
+  <button id="pair">연결 정보 저장</button><button id="forget" class="secondary">저장된 연결 지우기</button>
+  <p class="hint">인증은 저장됩니다. 브라우저를 다시 열면 탭에서 전송만 다시 시작하세요.</p>
+ </details>
+ <p class="hint">이 창을 닫아도 전송은 계속됩니다. 재생음은 서버 출력으로 전달됩니다.</p>
+ <script type="module" src="popup.js"></script>
+</body></html>

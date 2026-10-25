@@ -11,6 +11,8 @@ using SoundManager.Core;
 
 namespace SoundManager.Server;
 
+public enum SourceUpdateResult { Updated, NotFound, Invalid, SaveFailed }
+
 public sealed class HubServer(Mixer mixer, string token, int port = 17842, string host = "0.0.0.0",
     string? sourceSettingsPath = null) : IAsyncDisposable
 {
@@ -36,6 +38,12 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
         application.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(15) });
         application.Use(async (context, next) =>
         {
+            if (context.Request.Path == "/v1/browser-audio")
+            {
+                if (!context.WebSockets.IsWebSocketRequest || !IsBrowserOrigin(context.Request.Headers.Origin.ToString()))
+                { context.Response.StatusCode = 403; return; }
+                await next(context); return;
+            }
             var supplied = Encoding.UTF8.GetBytes(context.Request.Headers["X-Sound-Key"].ToString());
             var expected = Encoding.UTF8.GetBytes(token);
             if (!CryptographicOperations.FixedTimeEquals(supplied, expected))
@@ -54,25 +62,48 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
         });
         application.MapPut("/v1/sources/{id:guid}", (Guid id, SourceSettings settings) =>
         {
-            if (!settings.IsValid) return Results.BadRequest("음량 0–2, 방향 0 이상 360 미만");
-            lock (sourcesGate)
-            {
-                if (!sessions.TryGetValue(id, out var session)) return Results.NotFound();
-                try
-                {
-                    if (session.DeviceId is Guid deviceId) savedSettings.Save(deviceId, settings);
-                }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-                { return Results.Problem("기기 설정을 저장하지 못했습니다. 이전 설정을 유지합니다.", statusCode: 503); }
-                return mixer.ConfigureSource(id, settings) ? Results.Ok() : Results.NotFound();
-            }
+            if (!settings.IsValid) return UpdateResponse(SourceUpdateResult.Invalid);
+            return UpdateResponse(ChangeSource(id, current => settings with { DisplayName = settings.DisplayName ?? current.DisplayName }));
         });
-        application.Map("/v1/audio", HandleAudioAsync);
+        application.MapPatch("/v1/sources/{id:guid}", (Guid id, SourceSettingsPatch changes) => UpdateResponse(UpdateSource(id, changes)));
+        application.Map("/v1/audio", context => HandleAudioAsync(context));
+        application.Map("/v1/browser-audio", context => HandleAudioAsync(context, browser: true));
         try { await application.StartAsync(cancellation); app = application; }
         catch { await application.DisposeAsync(); throw; }
     }
 
-    private async Task HandleAudioAsync(HttpContext context)
+    public SourceUpdateResult UpdateSource(Guid id, SourceSettingsPatch changes)
+    {
+        if (changes.ResetName && changes.DisplayName is not null) return SourceUpdateResult.Invalid;
+        return ChangeSource(id, changes.Apply);
+    }
+
+    private SourceUpdateResult ChangeSource(Guid id, Func<SourceSettings, SourceSettings> change)
+    {
+        lock (sourcesGate)
+        {
+            if (!sessions.TryGetValue(id, out var session) || mixer.GetSourceSettings(id) is not { } current) return SourceUpdateResult.NotFound;
+            var updated = change(current);
+            if (!updated.IsValid) return SourceUpdateResult.Invalid;
+            try { if (session.DeviceId is Guid deviceId) savedSettings.Save(deviceId, updated); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return SourceUpdateResult.SaveFailed; }
+            return mixer.ConfigureSource(id, updated) ? SourceUpdateResult.Updated : SourceUpdateResult.NotFound;
+        }
+    }
+
+    private static IResult UpdateResponse(SourceUpdateResult result) => result switch
+    {
+        SourceUpdateResult.Updated => Results.Ok(),
+        SourceUpdateResult.NotFound => Results.NotFound(),
+        SourceUpdateResult.Invalid => Results.BadRequest("음량 0–2, 방향 0 이상 360 미만, 이름 1–64자"),
+        _ => Results.Problem("기기 설정을 저장하지 못했습니다. 이전 설정을 유지합니다.", statusCode: 503)
+    };
+
+    private static bool IsBrowserOrigin(string origin) => Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
+        uri.Scheme == "chrome-extension" && uri.Host.Length == 32 && uri.Host.All(c => c is >= 'a' and <= 'p') &&
+        uri.Port == -1 && uri.UserInfo.Length == 0 && uri.Query.Length == 0 && uri.Fragment.Length == 0 && uri.AbsolutePath is "" or "/";
+
+    private async Task HandleAudioAsync(HttpContext context, bool browser = false)
     {
         if (!context.WebSockets.IsWebSocketRequest) { context.Response.StatusCode = 400; return; }
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
@@ -83,6 +114,17 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
             var first = await ReceiveMessageAsync(socket, buffer, context.RequestAborted);
             if (first.Type != WebSocketMessageType.Text || first.Count > 4096)
                 throw new ArgumentException("먼저 JSON 형식 정보를 보내세요.");
+            if (browser)
+            {
+                using var document = JsonDocument.Parse(buffer.AsMemory(0, first.Count));
+                string supplied = document.RootElement.TryGetProperty("key", out var key) && key.ValueKind == JsonValueKind.String ? key.GetString()! : "";
+                if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(supplied), Encoding.UTF8.GetBytes(token)))
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    await socket.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation, "Authentication failed", timeout.Token);
+                    return;
+                }
+            }
             var hello = JsonSerializer.Deserialize<AudioHello>(buffer.AsSpan(0, first.Count), Json);
             if (hello is null || hello.Version != 1 || hello.Format is null)
                 throw new ArgumentException("프로토콜 버전은 1입니다.");

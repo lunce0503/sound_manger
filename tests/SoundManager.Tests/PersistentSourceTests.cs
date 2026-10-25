@@ -61,6 +61,33 @@ public sealed class PersistentSourceTests : IAsyncLifetime
 
     private SourceState State(Guid id) => mixer.Snapshot().Sources.Single(s => s.Id == id);
 
+    [Fact]
+    public async Task NamesAndPartialChangesPersistWithoutOverwritingOtherControls()
+    {
+        Guid device = Guid.NewGuid(); var connection = await ConnectAsync(device, "Original");
+        using (var response = await http.PatchAsJsonAsync($"/v1/sources/{connection.Id}", new { displayName = "거실 음악" })) response.EnsureSuccessStatusCode();
+        await Task.WhenAll(
+            http.PatchAsJsonAsync($"/v1/sources/{connection.Id}", new { volume = 0.4f }),
+            http.PatchAsJsonAsync($"/v1/sources/{connection.Id}", new { muted = true }));
+        Assert.Equal("거실 음악", State(connection.Id).Name);
+        Assert.Equal(new SourceSettings(0.4f, Muted: true, DisplayName: "거실 음악"), State(connection.Id).Settings);
+        // Older clients send PUT without a name; this must not erase the alias.
+        await ConfigureAsync(connection.Id, new(0.6f, 90, true));
+        Assert.Equal("거실 음악", State(connection.Id).Name);
+        await DisconnectAsync(connection.Socket);
+        http.Dispose(); await server.DisposeAsync(); await StartServerAsync();
+        var restored = await ConnectAsync(device, "Different capture name"); using var socket = restored.Socket;
+        Assert.Equal("거실 음악", State(restored.Id).Name);
+        Assert.Equal(SourceUpdateResult.Updated, server.UpdateSource(restored.Id, new(Muted: true)));
+        Assert.Equal(State(restored.Id).Settings, new SourceSettingsStore(SettingsPath).Get(device));
+        using (var response = await http.PatchAsJsonAsync($"/v1/sources/{restored.Id}", new { resetName = true })) response.EnsureSuccessStatusCode();
+        Assert.Equal("Different capture name", State(restored.Id).Name);
+        Assert.Equal(0.6f, State(restored.Id).Settings.Volume);
+        Assert.True(State(restored.Id).Settings.Muted);
+        using var invalid = await http.PatchAsJsonAsync($"/v1/sources/{restored.Id}", new { displayName = "\n" });
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

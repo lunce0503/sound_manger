@@ -85,6 +85,16 @@ volume 0–2, azimuth 0 이상 360 미만. 0 앞, 90 오른쪽, 180 뒤, 270 왼
 
 안정된 `deviceId`가 있는 기기는 저장이 성공한 뒤에만 변경을 적용하고 `200`을 반환합니다. 파일 저장 실패는 `503`이며 이전 설정을 유지합니다. 클라이언트의 이름·IP·연결 키를 설정 조회 키로 사용하지 않습니다. 비활성 기기의 설정은 서버에 보관하지만 `/v1/state`의 `sources`에는 현재 연결된 기기만 포함합니다.
 
+v0.4.0은 `settings.displayName`에 사용자 지정 이름을 저장하고 `sources[].name`에 표시할 최종 이름을 반환합니다. null이면 캡처 원래 이름을 사용합니다. 이름은 공백만이 아닌 1–64자이며 제어 문자를 거부합니다. 이전 저장 파일은 null로 읽습니다. PUT에서 null/생략한 이름은 기존 별칭을 유지합니다.
+
+`PATCH /v1/sources/{sourceId}`는 전송한 항목만 원자적으로 변경·저장합니다. 지원 항목은 `volume`, `azimuth`, `spatial`, `muted`, `displayName`, `resetName`입니다. 예: `{"muted":true}`, `{"volume":0.5}`, `{"displayName":"음악 탭"}`. `{"resetName":true}`로 별칭을 지웁니다. resetName과 displayName을 함께 지정하면 `400`입니다. Windows 서버 화면도 같은 저장/검증 경로를 사용합니다.
+
+## 브라우저 탭 PCM
+
+브라우저 확장은 `ws(s)://<server>/v1/browser-audio`에 연결합니다. 일반 웹페이지 Origin은 `403`이며 Chromium 확장 Origin만 허용합니다. 브라우저 WebSocket은 사용자 지정 헤더를 지원하지 않으므로 이 경로만 첫 텍스트 프레임의 `key`로 인증합니다. 주소/쿼리에 키를 넣지 않습니다. 첫 메시지는 기존 AudioHello 필드와 key이며 실제 AudioContext의 sampleRate, 1/2 채널, float32 LE를 선언합니다.
+
+인증 실패는 소스를 등록하지 않고 close `1008`로 종료합니다. 인증 전 제한 시간·최대 메시지는 기존과 같습니다. 인증 후 ready sourceId와 바이너리 PCM·keepalive·설정 제어는 동일합니다. 기존 `/v1/audio`와 HTTP 제어는 계속 X-Sound-Key를 요구합니다. 확장 Origin 검사 자체는 인증을 대신하지 않습니다.
+
 ## DSP 순서
 
 `입력별 PCM decode → bounded buffer → 서버 레이트 변환 → 선택적 가상 방향 → 소스 음량/음소거 → 합산 → 저음/고음/명료도 EQ → 전체 음량 → hard clip → WASAPI → OS Bluetooth 출력`

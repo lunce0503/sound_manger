@@ -48,7 +48,11 @@ internal sealed class AudioSource(Guid id, string name, AudioFormat format)
 
     public SourceState Snapshot()
     {
-        lock (gate) return new(Id, name, format, Settings, count * 1000d / format.SampleRate, dropped, underruns);
+        lock (gate)
+        {
+            var options = Settings;
+            return new(Id, options.DisplayName ?? name, format, options, count * 1000d / format.SampleRate, dropped, underruns);
+        }
     }
 
     public void Mix(Span<float> output)
