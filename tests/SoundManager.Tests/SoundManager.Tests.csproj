@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SoundManager.Core\SoundManager.Core.csproj" />
     <ProjectReference Include="..\..\src\SoundManager.Server\SoundManager.Server.csproj" />
+    <ProjectReference Include="..\..\src\SoundManager.Updates\SoundManager.Updates.csproj" />
   </ItemGroup>
 
 </Project>

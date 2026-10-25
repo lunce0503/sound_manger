@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SoundManager.Core\SoundManager.Core.csproj" />
     <ProjectReference Include="..\SoundManager.Server\SoundManager.Server.csproj" />
+    <ProjectReference Include="..\SoundManager.Updates\SoundManager.Updates.csproj" />
   </ItemGroup>
 
   <ItemGroup>

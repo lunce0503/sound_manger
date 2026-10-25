@@ -22,6 +22,12 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
     private readonly SourceSettingsStore savedSettings = new(sourceSettingsPath);
     private readonly object sourcesGate = new();
     private readonly Dictionary<Guid, (Guid? DeviceId, WebSocket Socket)> sessions = [];
+    private bool updating;
+    public bool TryBeginUpdate(bool requireIdle = true)
+    {
+        lock (sourcesGate) { if (requireIdle && sessions.Count != 0) return false; updating=true; return true; }
+    }
+    public void CancelUpdate() { lock (sourcesGate) updating=false; }
     public string[] Addresses => app?.Urls.ToArray() ?? [];
     public static string CreateToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
 
@@ -105,6 +111,7 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
 
     private async Task HandleAudioAsync(HttpContext context, bool browser = false)
     {
+        lock (sourcesGate) if (updating) { context.Response.StatusCode=503; return; }
         if (!context.WebSockets.IsWebSocketRequest) { context.Response.StatusCode = 400; return; }
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         Guid? id = null;
@@ -133,6 +140,7 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
             if (string.IsNullOrWhiteSpace(hello.Name) || hello.Name.Length > 64) throw new ArgumentException("잘못된 기기 이름");
             lock (sourcesGate)
             {
+                if (updating) throw new UpdateInProgressException();
                 // A reconnect may arrive before the previous network session times out.
                 if (hello.DeviceId is Guid deviceId)
                 {
@@ -164,6 +172,15 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
             if (socket.State == WebSocketState.CloseReceived)
                 await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
         }
+        catch (UpdateInProgressException)
+        {
+            if (socket.State == WebSocketState.Open)
+            {
+                using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                try { await socket.CloseOutputAsync(WebSocketCloseStatus.EndpointUnavailable,"Server updating; retry",timeout.Token); }
+                catch (Exception error) when (error is WebSocketException or OperationCanceledException) { }
+            }
+        }
         catch (Exception ex) when (ex is ArgumentException or JsonException or InvalidOperationException)
         {
             if (socket.State == WebSocketState.Open)
@@ -183,6 +200,8 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
             }
         }
     }
+
+    private sealed class UpdateInProgressException : Exception;
 
     private static async Task<(WebSocketMessageType Type, int Count)> ReceiveMessageAsync(
         WebSocket socket, byte[] buffer, CancellationToken cancellation)

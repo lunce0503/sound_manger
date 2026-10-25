@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using SoundManager.Updates;
 
 internal static class Program
 {
@@ -15,11 +16,14 @@ internal static class Program
         bool extractOnly=args.Length==2 && args[0]=="--extract-only";
         try
         {
-            if (args.Length!=0 && !extractOnly) throw new ArgumentException("지원하지 않는 실행 옵션입니다.");
+            var options=LauncherOptions.Parse(args);
             var assembly=Assembly.GetExecutingAssembly();
             string hash=assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Single(a=>a.Key=="PayloadSha256").Value!;
             string version=assembly.GetName().Version!.ToString(3);
-            string destination=extractOnly?Path.GetFullPath(args[1]):Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SoundManager","versions",version+"-"+hash[..12]);
+            string root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SoundManager");
+            if (!extractOnly && options.WaitForPid is null && InstalledVersion.NewerExecutable(root,Version.Parse(version)) is string newer)
+            { Process.Start(new ProcessStartInfo(newer){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(newer)!}); return 0; }
+            string destination=options.ExtractDirectory??Path.Combine(root,"versions",version+"-"+hash[..12]);
             Directory.CreateDirectory(destination);
             using var launchLock=AcquireLock(Path.Combine(destination,".launch.lock"));
             string marker=Path.Combine(destination,".ready");
@@ -34,6 +38,26 @@ internal static class Program
                 File.WriteAllText(marker,hash);
             }
             if (extractOnly) return 0;
+            if (options.WaitForPid is int parentId)
+            {
+                if (!LauncherOptions.IsInstalledExecutable(root,options.Fallback!)) throw new IOException("이전 앱 경로를 확인하지 못했습니다.");
+                using var parent=Process.GetProcessById(parentId);
+                if (!string.Equals(Path.GetFileName(parent.MainModule?.FileName),"SoundManager.Windows.exe",StringComparison.OrdinalIgnoreCase)) throw new IOException("업데이트할 앱을 확인하지 못했습니다.");
+                Directory.CreateDirectory(Path.Combine(root,"updates"));
+                File.WriteAllText(LauncherOptions.Marker(root,options.Token!,"prepared"),version);
+                var timeout=Stopwatch.StartNew();
+                while (!parent.HasExited)
+                {
+                    if (File.Exists(LauncherOptions.Marker(root,options.Token!,"cancel"))) return 0;
+                    if (timeout.Elapsed>TimeSpan.FromMinutes(5)) throw new TimeoutException("앱 종료를 기다리는 시간이 초과되었습니다.");
+                    Thread.Sleep(100);
+                }
+                var start=new ProcessStartInfo(Path.Combine(destination,"SoundManager.Windows.exe")){UseShellExecute=false,WorkingDirectory=destination,CreateNoWindow=true};
+                start.ArgumentList.Add("--updated");start.ArgumentList.Add(options.Token!);
+                var fallback=new ProcessStartInfo(options.Fallback!){UseShellExecute=false,WorkingDirectory=Path.GetDirectoryName(options.Fallback!)!,CreateNoWindow=true};
+                fallback.ArgumentList.Add("--update-fallback");fallback.ArgumentList.Add(options.Token!);
+                return UpdateHandoff.Launch(start,fallback,LauncherOptions.Marker(root,options.Token!,"ready"),TimeSpan.FromMinutes(2))?0:1;
+            }
             Process.Start(new ProcessStartInfo(Path.Combine(destination,"SoundManager.Windows.exe")) { WorkingDirectory=destination,UseShellExecute=true });
             return 0;
         }

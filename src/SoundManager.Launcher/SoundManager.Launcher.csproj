@@ -7,4 +7,7 @@
     <EmbeddedResource Include="$(PayloadPath)" LogicalName="SoundManager.Payload.zip" />
     <AssemblyMetadata Include="PayloadSha256" Value="$(PayloadSha256)" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SoundManager.Updates\SoundManager.Updates.csproj" />
+  </ItemGroup>
 </Project>

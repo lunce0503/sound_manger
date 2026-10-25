@@ -13,6 +13,8 @@ const artifacts = resolve(root, '../artifacts/browser-e2e'); await mkdir(artifac
 const run = await mkdtemp(join(artifacts, 'run-')); const extension = join(run, 'extension'); await mkdir(extension);
 const files = ['manifest.json','protocol.js','auth-store.js','pcm-batcher.js','pcm-worklet.js','offscreen.html','offscreen.js','service-worker.js','popup.html','popup.js','popup.css'];
 for (const name of files) await copyFile(join(root, name), join(extension, name));
+// Expose the real file-refresh operation only in this isolated test copy.
+await writeFile(join(extension,'service-worker.js'),await readFile(join(extension,'service-worker.js'),'utf8')+'\nglobalThis.checkInstalledUpdate = refreshInstalledFiles;\n');
 // Only the isolated test copy pregrants this loopback fixture. Production requests its chosen host at pairing time.
 const manifest = JSON.parse(await readFile(join(extension, 'manifest.json'), 'utf8'));
 manifest.host_permissions = ['http://127.0.0.1/*']; await writeFile(join(extension, 'manifest.json'), JSON.stringify(manifest));
@@ -37,6 +39,11 @@ async function launch() {
     executablePath: process.env.SM_CHROMIUM_EXECUTABLE,
     ignoreDefaultArgs: ['--mute-audio', '--disable-extensions'],
     args: [`--disable-extensions-except=${extension}`,`--load-extension=${extension}`]});
+  // Match the documented unpacked installation in this disposable browser profile.
+  const setup=await context.newPage();await setup.goto('chrome://extensions');
+  const developer=setup.locator('#devMode');await developer.waitFor();
+  if(!await developer.evaluate(node=>node.checked))await developer.click();
+  await setup.close();
   const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
   return {worker, id: new URL(worker.url()).host};
 }
@@ -117,6 +124,22 @@ try {
   assert.equal((await render()).rms,0);
   await patch(sourceB.id,{muted:false,volume:0.5});await until(async()=> (await render()).rms>0,'Second tab PCM remained silent');
   assert((await state()).sources.find(s=>s.id===sourceA.id).settings.muted);
+  // Simulate the Windows updater replacing the installed files. Active captures defer reload.
+  const nextVersion=manifest.version.split('.').map(Number);nextVersion[2]++;
+  const nextManifest={...manifest,version:nextVersion.join('.')};
+  await writeFile(join(extension,'manifest.json'),JSON.stringify(nextManifest));
+  assert.equal(await worker.evaluate(async()=>(await(await fetch(chrome.runtime.getURL('manifest.json'),{cache:'no-store'})).json()).version),nextManifest.version,'Changed manifest is not visible to the updater');
+  await worker.evaluate(()=>globalThis.checkInstalledUpdate());
+  assert.equal(await worker.evaluate(()=>chrome.runtime.getManifest().version),manifest.version);
+  assert.equal((await state()).sources.length,2);
+  await worker.evaluate(()=>chrome.runtime.sendMessage({target:'offscreen',type:'stop-all'}));
+  await until(async()=> (await state()).sources.length===0,'Stopped captures remain active');
+  await worker.evaluate(()=>globalThis.checkInstalledUpdate()).catch(()=>{});
+  const awaken=await context.newPage();await awaken.goto(`chrome-extension://${id}/popup.html`);
+  await until(async()=>{
+    for(const candidate of context.serviceWorkers())try{if(await candidate.evaluate(()=>chrome.runtime.getManifest().version)===nextManifest.version)return true;}catch{}
+    return false;
+  },'Extension did not reload the updated files when idle');
   await context.close();context=null;
   await until(async()=> (await state()).sources.length===0,'Closed browser sources remain active');
   const reopened=await launch();const page=await context.newPage();await page.goto(origin+'/a');
@@ -124,7 +147,7 @@ try {
   await until(()=>popup.locator('#start').isEnabled(),'Saved pairing was not reused after browser restart');
   await popup.locator('#profile').selectOption(profileId);await popup.locator('#start').click();
   await until(async()=> (await state()).sources.some(s=>s.name==='음악 탭'&&s.settings.muted),'Saved tab settings were not restored');
-  console.log(JSON.stringify({tabs:2,rawPcm:true,popupIndependent:true,serverMuteAndVolume:true,rename:true,pairingAndProfileRestored:true,hardwarePlayback:false}));
+  console.log(JSON.stringify({tabs:2,rawPcm:true,popupIndependent:true,serverMuteAndVolume:true,rename:true,idleExtensionUpdate:true,pairingAndProfileRestored:true,hardwarePlayback:false}));
 } finally {
   await context?.close();await new Promise(resolve=>fixture.close(resolve));
   host.stdin.end('exit\n');await Promise.race([once(host,'exit'),new Promise(resolve=>setTimeout(resolve,5000))]);if(host.exitCode===null)host.kill();

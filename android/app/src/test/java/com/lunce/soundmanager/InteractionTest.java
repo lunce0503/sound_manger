@@ -26,6 +26,7 @@ public class InteractionTest {
     private final List<ActivityController<MainActivity>> controllers=new ArrayList<>();
     @Before public void prepare() throws Exception {
         context=RuntimeEnvironment.getApplication(); context.getSharedPreferences("trusted_connection",Context.MODE_PRIVATE).edit().clear().commit();
+        context.getSharedPreferences("app_updates",Context.MODE_PRIVATE).edit().putBoolean("automatic",false).commit();
         KeyGenerator generator=KeyGenerator.getInstance("AES"); generator.init(256); key=generator.generateKey();
     }
     @After public void cleanup() { for (ActivityController<MainActivity> controller:controllers) controller.pause().stop().destroy(); }

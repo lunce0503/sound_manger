@@ -1,7 +1,10 @@
-param([string]$Version = '0.4.0')
+param([string]$Version = '0.4.1')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected semantic version, for example 0.2.0' }
+$sourceVersion = ([xml](Get-Content -LiteralPath (Join-Path $repoRoot 'Directory.Build.props') -Raw)).Project.PropertyGroup.Version
+$androidConfig = Get-Content -LiteralPath (Join-Path $repoRoot 'android/app/build.gradle') -Raw
+if ($sourceVersion -ne $Version -or [regex]::Match($androidConfig,"versionName\s+'([^']+)'").Groups[1].Value -ne $Version) { throw 'Source versions must match the requested release' }
 # Reuse this key for all future updates. Never put it or its password in Git or release assets.
 $signingRoot = Join-Path $env:LOCALAPPDATA 'SoundManager\release-signing'
 $keystore = Join-Path $signingRoot 'release.jks'
@@ -40,6 +43,18 @@ try {
     $apk = Join-Path $releaseRoot "SoundManager-$Version-android.apk"
     Copy-Item -LiteralPath android/app/build/outputs/apk/release/app-release.apk -Destination $apk
     & "$PSScriptRoot\package-windows.ps1" -Version $Version
+    $windows = Get-Item -LiteralPath (Join-Path $releaseRoot "SoundManager-$Version-windows-x64.exe")
+    $android = Get-Item -LiteralPath $apk
+    $versionCode = [int]([regex]::Match((Get-Content android/app/build.gradle -Raw), 'versionCode\s+(\d+)').Groups[1].Value)
+    $manifest = [ordered]@{
+        schema = 1; version = $Version
+        windows = [ordered]@{file=$windows.Name;sha256=(Get-FileHash -LiteralPath $windows.FullName -Algorithm SHA256).Hash.ToLowerInvariant();size=$windows.Length}
+        android = [ordered]@{file=$android.Name;sha256=(Get-FileHash -LiteralPath $android.FullName -Algorithm SHA256).Hash.ToLowerInvariant();size=$android.Length;versionCode=$versionCode}
+    }
+    $manifestPath = Join-Path $releaseRoot 'update.json'
+    $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+    & "$env:JAVA_HOME\bin\java.exe" "$PSScriptRoot\SignUpdate.java" $manifestPath 'src/SoundManager.Updates/UpdateManifest.cs' 'android/app/src/main/java/com/lunce/soundmanager/AppUpdates.java'
+    if ($LASTEXITCODE -ne 0) { throw 'Update manifest signing failed' }
     Copy-Item -LiteralPath LICENSE, README.md, THIRD-PARTY-NOTICES.md -Destination $releaseRoot
     $sums = Get-ChildItem -LiteralPath $releaseRoot -File | Where-Object Name -ne 'SHA256SUMS.txt' | ForEach-Object {
         "{0}  {1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name

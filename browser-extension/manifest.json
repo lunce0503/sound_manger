@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Sound Manager Tabs",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "선택한 Chrome·Edge 탭의 소리를 Sound Manager 서버에 독립된 음원으로 전송합니다.",
   "minimum_chrome_version": "116",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2nKMaAVHtGryiWrtRaZg/zIKC4yfwzBcRIA2rvo8ZKTn4nFRtXYQSqLvFjWtKL8MIylt01+kWprd2OqvDKsAgRKj2CqX9DNHKXv8x0QAkuo/pMxrStPkqDolqeQsSPdyZQmzrlkJxxFJL2IqGNKwku/F9w1PvbIjd+fERX5s5EzWPgXHtGFoim8cAhagVRtzJnfHRd2oba1E5X9rDAuZxZBYaj4ty003QvQN5Qv3uOs/J+Bhv3Fyo4RzhRLMYYU98iVxtn7mUsCVgeWcS6JiNgKg2xAOphW8nFbAvnpvw0yarbdJc88DUqbolsxvW37oN23ambc5kbRnXDkIyxoquQIDAQAB",
-  "permissions": ["activeTab", "tabCapture", "offscreen", "storage"],
+  "permissions": ["activeTab", "tabCapture", "offscreen", "storage", "alarms"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "service-worker.js", "type": "module"},
   "action": {"default_popup": "popup.html", "default_title": "Sound Manager 탭 전송"},

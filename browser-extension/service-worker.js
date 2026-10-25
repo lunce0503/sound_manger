@@ -78,3 +78,20 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   return true;
 });
 chrome.tabs.onRemoved.addListener(tabId => { offscreen({type: 'stop', tabId}).catch(() => {}); });
+
+// The Windows updater refreshes this unpacked extension's stable folder.
+// Reload only after every capture ends so an update cannot interrupt audio.
+async function refreshInstalledFiles() {
+  if (starting.size) return;
+  const response = await fetch(chrome.runtime.getURL('manifest.json'), {cache: 'no-store'});
+  const installed = await response.json();
+  if (installed.version === chrome.runtime.getManifest().version) return;
+  const captures = await offscreen({type: 'status'});
+  if (!(captures.streams?.length)) chrome.runtime.reload();
+}
+chrome.alarms.create('update-files', {periodInMinutes: 5});
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === 'update-files') {
+    const operation = queue.then(refreshInstalledFiles); queue = operation.catch(() => {});
+  }
+});

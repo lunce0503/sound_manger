@@ -30,6 +30,8 @@ public final class MainActivity extends Activity {
     private volatile int revision,session;
     private Dialog directionDialog;
     private String directionSourceId;
+    private final ExecutorService updateWorker=Executors.newSingleThreadExecutor();
+    private Dialog updateDialog;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -59,6 +61,8 @@ public final class MainActivity extends Activity {
             if (CaptureService.active) stopService(new Intent(this,CaptureService.class)); else requestCapture();
         });
         Ui.text(root,"Sound Manager "+BuildConfig.VERSION_NAME,12,Ui.SUB);
+        Ui.button(root,"앱 업데이트",this::showUpdates);
+        AppUpdates.schedule(this);
         final int restoreSession=session;
         io.execute(()->{
             int generation=restoreSession;
@@ -261,9 +265,55 @@ public final class MainActivity extends Activity {
         if (request==20 && result==RESULT_OK && data!=null && api!=null) startForegroundService(new Intent(this,CaptureService.class)
             .putExtra("permission",data).putExtra("address",api.address).putExtra("key",api.key));
     }
-    @Override protected void onStart() { super.onStart(); visible=true; }
+    @Override protected void onStart() {
+        super.onStart(); visible=true;
+        if(AppUpdates.automatic(this))updateWorker.execute(()->AppUpdates.check(getApplicationContext(),false));
+        if(getIntent().getBooleanExtra("updates",false)){getIntent().removeExtra("updates");showUpdates();}
+    }
     @Override protected void onStop() { visible=false; super.onStop(); }
-    @Override protected void onDestroy() { session++; io.shutdownNow(); if (directionDialog!=null) directionDialog.dismiss(); super.onDestroy(); }
+    @Override protected void onDestroy() { session++; io.shutdownNow();updateWorker.shutdownNow(); if (directionDialog!=null) directionDialog.dismiss();if(updateDialog!=null)updateDialog.dismiss(); super.onDestroy(); }
+
+    private void showUpdates() {
+        LinearLayout content=Ui.column(this);int pad=Ui.dp(this,20);content.setPadding(pad,pad,pad,pad);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("앱 업데이트 · "+BuildConfig.VERSION_NAME).setView(content).setNegativeButton("닫기",null).create();
+        updateDialog=dialog;
+        TextView details=Ui.text(content,AppUpdates.status(this),14,Ui.SUB);
+        Switch automatic=new Switch(this);automatic.setText("새 버전 자동 확인");automatic.setChecked(AppUpdates.automatic(this));Ui.toggleStyle(automatic);content.addView(automatic);
+        Switch wifi=new Switch(this);wifi.setText(R.string.update_wifi);wifi.setChecked(AppUpdates.preferences(this).getBoolean("wifi",true));Ui.toggleStyle(wifi);content.addView(wifi);
+        automatic.setOnCheckedChangeListener((v,checked)->AppUpdates.configure(this,checked,wifi.isChecked()));
+        wifi.setOnCheckedChangeListener((v,checked)->AppUpdates.configure(this,automatic.isChecked(),checked));
+        Ui.text(content,"설치할 때 Android 시스템 확인이 필요합니다. 연결 인증과 기기 설정은 유지됩니다.",14,Ui.SUB);
+        Button install=Ui.button(content,"다운로드한 업데이트 설치",()->{
+            Runnable action=()->{
+                installUpdate(details);
+            };
+            if(CaptureService.active)new AlertDialog.Builder(this).setTitle("업데이트 설치").setMessage("현재 소리 전송을 중지한 뒤 설치합니다. 설치 후 소리 전송은 다시 시작해주세요.")
+                .setNegativeButton("취소",null).setPositiveButton("전송 중지 후 설치",(d,w)->{stopService(new Intent(this,CaptureService.class));action.run();}).show();
+            else action.run();
+        });
+        install.setEnabled(AppUpdates.ready(this));
+        Button check=Ui.button(content,"지금 확인 및 다운로드",()->{
+            details.setText("새 버전 확인 및 다운로드 중…");
+            updateWorker.execute(()->{
+                String result=AppUpdates.check(getApplicationContext(),true);
+                runOnUiThread(()->{if(!isDestroyed()&&dialog.isShowing()){details.setText(result);install.setEnabled(AppUpdates.ready(this));}});
+            });
+        });
+        check.setContentDescription("모바일 데이터에서도 업데이트 확인 및 다운로드");
+        dialog.setOnDismissListener(d->updateDialog=null);dialog.show();
+    }
+    private void installUpdate(TextView details) {
+        details.setText("설치 파일을 검증하고 있습니다…");
+        updateWorker.execute(()->{
+            try {
+                AppUpdates.validateReady(getApplicationContext());
+                runOnUiThread(()->{
+                    if(!isDestroyed())try {boolean allowed=getPackageManager().canRequestPackageInstalls();AppUpdates.install(this);details.setText(allowed?"Android 시스템 설치 화면에서 확인하세요.":"이 앱의 설치 권한을 허용한 뒤 설치 버튼을 다시 누르세요.");}
+                    catch(Exception error){details.setText("시스템 설치 화면을 열지 못했습니다.");}
+                });
+            }catch(Exception error){runOnUiThread(()->{if(!isDestroyed())details.setText("설치 파일 검증에 실패했습니다. 지금 확인으로 다시 다운로드하세요.");});}
+        });
+    }
 
     private final class Slider {
         final SeekBar seek; final TextView valueText; final int offset; final String unit;

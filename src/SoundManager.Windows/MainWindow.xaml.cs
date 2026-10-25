@@ -11,6 +11,7 @@ using NAudio.Wave;
 using SoundManager.Core;
 using SoundManager.Server;
 using QRCoder;
+using SoundManager.Updates;
 
 namespace SoundManager.Windows;
 
@@ -37,6 +38,9 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource shutdown = new();
     private readonly WindowsConnectionStore connections = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SoundManager","connections"));
     private bool busy, closing, refreshingDevices;
+    private readonly WindowsUpdates updates;
+    private bool updateApplying, updateTick;
+    private DateTime nextApply;
     private record DeviceItem(string Id, string Name);
 
     public MainWindow()
@@ -66,6 +70,18 @@ public partial class MainWindow : Window
         }
         catch (Exception) { Status.Text="저장된 연결을 불러오지 못했습니다. 연결 설정에서 다시 인증하세요."; }
         lifetime = new BackgroundWindowLifetime(this, StopForExitAsync, () => Application.Current.Shutdown());
+        updates=new WindowsUpdates(typeof(MainWindow).Assembly.GetName().Version!, message=>
+        {
+            UpdateStatus.Text=message; ApplyUpdateButton.IsEnabled=updates?.Ready==true;
+        });
+        AutomaticUpdates.IsChecked=updates.Preferences.Automatic; IdleUpdates.IsChecked=updates.Preferences.ApplyWhenIdle;
+        ApplyUpdateButton.IsEnabled=updates.Ready;
+        UpdateStatus.Text=updates.Ready?$"{updates.AvailableVersion} 업데이트 준비 완료":$"현재 버전 {typeof(MainWindow).Assembly.GetName().Version!.ToString(3)}";
+        updates.Start(()=>AudioIdle);
+        string installedExtension=Path.Combine(WindowsUpdates.Root,"browser-extension");
+        if (Directory.Exists(installedExtension))
+            try { BrowserExtensionFiles.Prepare(Path.Combine(AppContext.BaseDirectory,"browser-extension"),installedExtension); }
+            catch (Exception) { Status.Text="브라우저 확장 갱신을 미뤘습니다. 브라우저 탭 연결에서 다시 준비할 수 있습니다."; }
         timer.Tick += (_, _) => RefreshState(); timer.Start();
     }
 
@@ -90,7 +106,7 @@ public partial class MainWindow : Window
     private async void ToggleServer(object sender, RoutedEventArgs e)
     {
         automaticStart?.Cancel();
-        if (busy || closing) return;
+        if (busy || closing || updateApplying) return;
         busy = true;
         try
         {
@@ -198,9 +214,9 @@ public partial class MainWindow : Window
         catch (Exception error) { LoginStartup.IsChecked = !enable; Status.Text = "시작 설정 저장 실패: " + error.Message; }
     }
 
-    public void StartAutomatically()
+    public void StartAutomatically(bool force = false)
     {
-        if (LoginStartup.IsChecked != true || closing || !automaticStartTask.IsCompleted) return;
+        if ((!force && LoginStartup.IsChecked != true) || closing || !automaticStartTask.IsCompleted) return;
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(shutdown.Token);
         automaticStart = cancellation;
         automaticStartTask = RunAutomaticStartAsync(cancellation);
@@ -297,7 +313,7 @@ public partial class MainWindow : Window
     private async void ToggleExternal(object sender, RoutedEventArgs e)
     {
         if (tunnelStart is not null) { tunnelStart.Cancel(); return; }
-        if (busy || closing || server is null) return;
+        if (busy || closing || updateApplying || server is null) return;
         busy = true;
         if (tunnel is not null)
         {
@@ -368,13 +384,19 @@ public partial class MainWindow : Window
     private async void ToggleSender(object sender, RoutedEventArgs e)
     {
         automaticStart?.Cancel();
-        if (busy || closing) return;
+        if (busy || closing || updateApplying) return;
         busy = true;
         try
         {
             if (this.sender is not null) { await StopSender(); Status.Text = "음원 전송 중지됨"; }
-            else
-            {
+            else await StartSenderAsync();
+        }
+        catch (Exception error) { Status.Text = error.Message; }
+        finally { busy = false; }
+    }
+
+    private async Task StartSenderAsync()
+    {
                 if (server is not null) throw new InvalidOperationException("먼저 통합 서버를 중지하세요.");
                 var candidate = new AudioSender();
                 candidate.Failed += message => Dispatcher.BeginInvoke(async () =>
@@ -388,10 +410,6 @@ public partial class MainWindow : Window
                 this.sender = candidate; SendButton.Content = "음원 전송 중지";
                 connections.SaveClient(new PairingLink(RemoteAddress.Text.Trim(),RemoteKey.Text.Trim()));
                 Status.Text = "기본 출력 장치의 원본 PCM을 전송 중입니다.";
-            }
-        }
-        catch (Exception error) { Status.Text = error.Message; }
-        finally { busy = false; }
     }
 
     private async Task StopSender()
@@ -416,6 +434,70 @@ public partial class MainWindow : Window
         var state = mixer.Snapshot();
         if (!MasterVolume.IsMouseCaptureWithin) MasterVolume.Value = state.Settings.MasterVolume * 100;
         sourceList.Refresh(state.Sources);
+        _=UpdateOnIdleAsync();
+    }
+
+    private bool AudioIdle=>!busy&&!closing&&sender is null&&mixer.Snapshot().Sources.Length==0;
+    private bool CanAutoApply=>AudioIdle&&!IsVisible&&tunnel is null&&tunnelStart is null&&Application.Current.Windows.Count<=1;
+    private async Task UpdateOnIdleAsync()
+    {
+        if(updateTick||updateApplying||closing)return;
+        updateTick=true;
+        try
+        {
+            if(AudioIdle)await updates.DownloadWhenIdleAsync();
+            ApplyUpdateButton.IsEnabled=updates.Ready;
+            if(updates.MayApplyAutomatically&&CanAutoApply&&DateTime.UtcNow>=nextApply)await ApplyUpdateAsync(true);
+        }
+        catch(OperationCanceledException) { }
+        finally {updateTick=false;}
+    }
+    private void UpdatePreferencesChanged(object sender,RoutedEventArgs e)
+    {
+        try {updates.SetPreferences(AutomaticUpdates.IsChecked==true,IdleUpdates.IsChecked==true);}
+        catch(Exception) {UpdateStatus.Text="업데이트 설정을 저장하지 못했습니다.";}
+    }
+    private async void CheckUpdate(object sender,RoutedEventArgs e)
+    { if(closing||updateApplying)return;await updates.CheckAsync(AudioIdle); ApplyUpdateButton.IsEnabled=updates.Ready; }
+    private async void ApplyUpdate(object sender,RoutedEventArgs e)
+    {
+        if(!updates.Ready||busy||closing||updateApplying)return;
+        string message="앱을 재시작해 업데이트합니다. 연결 및 기기 설정은 유지됩니다.";
+        if(!AudioIdle)message+="\n현재 음원 연결과 전송은 잠시 중지됩니다.";
+        if(tunnel is not null)message+="\n외부 연결 주소가 변경되므로 휴대폰에서 새 QR로 연결해야 합니다.";
+        if(MessageBox.Show(this,message,"업데이트 적용",MessageBoxButton.OKCancel,MessageBoxImage.Information)==MessageBoxResult.OK)await ApplyUpdateAsync(false);
+    }
+    private async Task ApplyUpdateAsync(bool automatic)
+    {
+        if(updateApplying||closing||!updates.Ready||busy)return;
+        updateApplying=true;
+        try
+        {
+            var resume=new UpdateResume(Guid.NewGuid().ToString("N"),updates.AvailableVersion!,server is not null||automaticStart is not null,sender is not null,tunnel is not null,!IsVisible,mixer.Settings);
+            bool prepared=await updates.PrepareAsync(resume,()=>!closing&&!busy&&(!automatic||CanAutoApply)&&(server?.TryBeginUpdate(automatic)??true),()=>resume with{Mix=mixer.Settings,Hidden=!IsVisible});
+            if(prepared)await lifetime.ExitAsync();
+        }
+        catch(Exception) {server?.CancelUpdate();UpdateStatus.Text="업데이트를 적용하지 못했습니다. 현재 앱을 유지하며 다시 시도할 수 있습니다.";}
+        finally {updateApplying=false;nextApply=DateTime.UtcNow.AddMinutes(5);}
+    }
+    internal async Task RestoreUpdateAsync(UpdateResume state,bool rollback)
+    {
+        if(rollback)updates.MarkFailed(state.Version);
+        mixer.Settings=state.Mix; MasterVolume.Value=state.Mix.MasterVolume*100;
+        if(state.Server)
+        {
+            StartAutomatically(force:true);
+            if(state.External)
+            {
+                await automaticStartTask;
+                if(server is not null&&!closing)ToggleExternal(this,new RoutedEventArgs());
+            }
+        }
+        else if(state.Sender)
+        {
+            busy=true;
+            try {await StartSenderAsync();}catch(Exception){Status.Text="업데이트 후 전송 연결을 복원하지 못했습니다. 저장된 연결로 다시 시작하세요.";}finally{busy=false;}
+        }
     }
 
     private void OpenBrowserExtension(object sender, RoutedEventArgs e)
@@ -440,6 +522,7 @@ public partial class MainWindow : Window
     {
         closing = true;
         timer.Stop(); shutdown.Cancel();
+        await updates.DisposeAsync();
         await automaticStartTask;
         // Starting a server/sender/tunnel may still be awaiting I/O. Cancel and join it
         // before disposing resources, otherwise it could come alive during exit.

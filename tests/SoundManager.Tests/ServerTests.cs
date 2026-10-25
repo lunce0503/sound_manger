@@ -34,6 +34,20 @@ public sealed class ServerTests : IAsyncLifetime
         await Assert.ThrowsAsync<WebSocketException>(() => socket.ConnectAsync(AudioUri(), timeout.Token));
     }
 
+    [Fact] public async Task IdleUpdateGateDefersActiveAudioAndRejectsNewConnections()
+    {
+        using(var active=await ConnectAsync())
+        {
+            Assert.False(server.TryBeginUpdate());
+            await active.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",CancellationToken.None);
+        }
+        await UntilAsync(()=>mixer.Snapshot().Sources.Length==0);
+        Assert.True(server.TryBeginUpdate());
+        using var rejected=new ClientWebSocket();rejected.Options.SetRequestHeader("X-Sound-Key",token);
+        await Assert.ThrowsAsync<WebSocketException>(()=>rejected.ConnectAsync(AudioUri(),CancellationToken.None));
+        server.CancelUpdate();using var resumed=await ConnectAsync();Assert.Single(mixer.Snapshot().Sources);
+    }
+
     [Fact]
     public async Task ControlsValidateBeforeUpdatingMixer()
     {
