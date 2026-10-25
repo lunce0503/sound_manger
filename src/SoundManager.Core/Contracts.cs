@@ -14,7 +14,7 @@ public sealed record AudioFormat(int SampleRate, int Channels, string Encoding)
     }
 }
 
-public sealed record AudioHello(int Version, string Name, AudioFormat Format);
+public sealed record AudioHello(int Version, string Name, AudioFormat Format, Guid? DeviceId = null);
 public sealed record MixSettings(float MasterVolume = 0.7f, float BassDb = 0,
     float TrebleDb = 0, float PresenceDb = 0)
 {

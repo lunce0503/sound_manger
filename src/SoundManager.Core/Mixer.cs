@@ -21,14 +21,15 @@ public sealed class Mixer
         }
     }
 
-    public Guid AddSource(string name, AudioFormat format)
+    public Guid AddSource(string name, AudioFormat format, SourceSettings? initialSettings = null)
     {
         format.Validate();
         if (string.IsNullOrWhiteSpace(name) || name.Length > 64) throw new ArgumentException("음원 이름은 1–64자입니다.");
+        if (initialSettings is not null && !initialSettings.IsValid) throw new ArgumentException("잘못된 초기 음원 설정");
         lock (sourcesGate)
         {
             if (sources.Length >= MaxSources) throw new InvalidOperationException("최대 16개 음원까지 연결할 수 있습니다.");
-            var source = new AudioSource(Guid.NewGuid(), name, format);
+            var source = new AudioSource(Guid.NewGuid(), name, format) { Settings = initialSettings ?? new() };
             Volatile.Write(ref sources, [.. sources, source]);
             return source.Id;
         }

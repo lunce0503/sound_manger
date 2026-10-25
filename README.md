@@ -2,7 +2,7 @@
 
 여러 Windows·Android 기기의 재생음을 Windows 서버에서 합쳐 Bluetooth 이어폰·스피커로 출력하는 초기 MVP입니다. Android 앱에서 QR로 연결하고 전체 음량, EQ와 음원별 방향을 조정합니다. 외부 네트워크에서는 앱의 Cloudflare HTTPS 터널을 사용할 수 있습니다.
 
-[v0.3.2 릴리스 및 다운로드](https://github.com/lunce0503/sound_manger/releases/tag/v0.3.2) · [변경 사항](docs/releases/v0.3.2.md)
+[v0.3.3 릴리스 및 다운로드](https://github.com/lunce0503/sound_manger/releases/tag/v0.3.3) · [변경 사항](docs/releases/v0.3.3.md)
 
 ```mermaid
 flowchart LR
@@ -15,7 +15,7 @@ flowchart LR
 
 ## 구현 범위
 
-- **Windows**: 서버/클라이언트 중 한 역할 선택. WASAPI 캡처/출력, 연결 QR·연결 코드, 선택적 외부 HTTPS 터널, 음량 및 EQ 프리셋. 창을 닫으면 트레이에서 서버·출력·전송을 유지합니다.
+- **Windows**: 서버/클라이언트 중 한 역할 선택. WASAPI 캡처/출력, 연결 QR·연결 코드, 선택적 외부 HTTPS 터널, 음량 및 EQ 프리셋. 창을 닫으면 트레이에서 서버·출력·전송을 유지합니다. 기기별 음량·음소거·방향·공간 효과 설정을 저장해 재연결 시 복원합니다.
 - **Android 10 이상**: QR로 한 번 인증한 뒤 자동 재연결. 전체 음량과 기기 목록이 있는 기본 화면, 별도 EQ·방향 설정 창, 스피커 아이콘·음소거 글자·스위치. 주소/키는 연결 관리 안에서만 입력합니다. 재생 오디오 전송과 알림에서 전송 중지를 지원합니다.
 - **서버 코어**: 최대 16개 음원, PCM16/float32 LE, 모노/스테레오, 8–192 kHz 입력. 서버에서 48 kHz float stereo로 변환하고 혼합. 입력별 제한된 버퍼, 언더런 재버퍼링, 소규모 클럭 드리프트 보정, 최종 출력 ±1 제한과 클리핑 계수.
 - **EQ**: 120 Hz 저음 shelf, 4 kHz 고음 shelf, 2.5 kHz presence peaking, 각 ±12 dB. 기본/저음 강조/고음 강조/부드럽게/선명하게 프리셋.
@@ -24,13 +24,23 @@ flowchart LR
 ## 실행
 
 1. Windows 서버 PC에 Bluetooth 이어폰/스피커를 페어링합니다.
-2. 배포한 `SoundManager-0.3.2-windows-x64.exe`를 실행합니다. 필요한 파일이 사용자 앱 폴더에 자동으로 풀리고 앱이 열립니다. 출력 장치를 선택한 뒤 **서버 시작**을 누릅니다.
+2. 배포한 `SoundManager-0.3.3-windows-x64.exe`를 실행합니다. 필요한 파일이 사용자 앱 폴더에 자동으로 풀리고 앱이 열립니다. 출력 장치를 선택한 뒤 **서버 시작**을 누릅니다.
 3. Windows 방화벽 알림에서는 사용하는 **개인 네트워크** 접근을 허용합니다. 수동 설정이 필요한 경우 서버 TCP `17842`를 같은 LAN에 허용합니다.
 4. Windows의 **새 기기 연결 · QR 인증**을 펼쳐 휴대폰과 같은 네트워크의 주소를 선택합니다. Android의 **연결 관리 → QR로 서버 연결**에서 스캔하고 주소를 확인하여 연결합니다. 카메라 없이 연결 코드를 붙여넣거나 연결 관리의 **주소와 키로 연결**을 사용할 수도 있습니다.
 5. Android에서 **재생음 전송 시작**을 누르고 오디오 권한 및 시스템 캡처 승인을 합니다. 캡처 가능한 앱에서 음악을 재생합니다. 서버의 출력 장치로 합산된 음원이 재생됩니다.
 6. 다른 Windows PC는 **복사한 연결 코드 적용**으로 주소/키를 입력한 뒤 **음원 전송 시작**을 누릅니다. Android에서 전체 EQ와 각 음원의 가상 방향을 조정합니다.
 
 인증이 성공하면 Android는 주소와 키를 Android Keystore AES-GCM으로 암호화해 저장합니다. 앱을 닫았다 열면 저장된 인증으로 연결하며, 일시적인 연결 실패 시에도 인증을 지우지 않고 재시도합니다. **연결 관리 → 저장된 연결 지우기**로 해제합니다. Windows 서버 키도 사용자별 DPAPI로 보관해 재시작 시 재사용합니다. Windows 클라이언트 연결도 암호화해 보관합니다. OS의 재생 오디오 캡처 승인은 서버 인증과 별개로 필요합니다.
+
+### 기기별 음량·음원 위치 유지
+
+Windows 서버와 음원을 보내는 Windows/Android 앱을 모두 v0.3.3 이상으로 업데이트하세요. 기기별 음량·음소거·방향 각도·공간 효과 사용 여부를 바꾸면 서버가 즉시 저장합니다. 연결 종료, 캡처 재시작, 네트워크 단절 후 재연결 및 서버 앱 재시작에도 마지막으로 저장한 설정을 복원합니다. 연결이 끊긴 음원은 활성 기기 목록에서 사라지지만 저장된 설정은 유지됩니다.
+
+각 전송 앱은 무작위 기기 ID를 보관해 모델명이나 PC 이름이 같아도 구분합니다. 이름을 바꿔도 ID가 같으면 같은 설정을 적용하며, 새 연결의 첫 PCM을 처리하기 전에 복원합니다. 이전 연결이 아직 시간 초과되지 않았어도 재연결이 기존 연결을 교체합니다. 전체 음량·EQ는 기기 연결/해제로 변경하지 않습니다.
+
+서버 설정 파일은 `%LOCALAPPDATA%/SoundManager/source-settings.json`, Windows 전송 기기 ID는 `%LOCALAPPDATA%/SoundManager/client-device-id.txt`에 보관합니다. Android는 앱 전용 저장소에 ID를 유지합니다. 앱 업데이트와 인증 정보 변경은 ID를 지우지 않습니다. 앱 데이터/ID 파일 삭제 또는 앱 재설치로 ID가 사라지면 새 기기로 처리합니다. ID는 인증 키나 하드웨어 식별자가 아닙니다.
+
+ID를 보내지 않는 이전 전송 앱도 연결되지만 기기별 자동 복원을 지원하지 않습니다. 저장 실패는 오류로 알리고 이전 설정을 유지하며, 손상된 저장 파일을 자동으로 덮어쓰지 않습니다. v0.3.2까지의 앱은 기기별 설정을 저장하지 않았으므로 업데이트 후 지정한 설정부터 유지됩니다.
 
 ### Windows 백그라운드 실행
 
@@ -87,7 +97,7 @@ cd android
 
 - Windows 개발용 실행 폴더: `artifacts/windows/SoundManager.Windows.exe` (x64, .NET 런타임 포함). 사용자 배포에는 아래의 단일 EXE를 사용합니다.
 - Android 개발용: `artifacts/android/SoundManager-debug.apk`.
-- 릴리스: `scripts/release.ps1`로 **단일 Windows EXE**와 **릴리스 서명 APK**, `SHA256SUMS.txt`를 `artifacts/release/v0.3.2`에 생성합니다. Windows 배포는 앞으로 항상 EXE이며 ZIP은 내부 패키징에만 사용합니다. EXE는 구성 파일 무결성을 확인하고 `%LOCALAPPDATA%/SoundManager/versions`에 풀어 실행합니다. Android 서명 키는 `%LOCALAPPDATA%/SoundManager/release-signing`에 보관하며 업데이트를 위해 보존해야 합니다. [릴리스·서명 안내](docs/releasing.md)
+- 릴리스: `scripts/release.ps1`로 **단일 Windows EXE**와 **릴리스 서명 APK**, `SHA256SUMS.txt`를 `artifacts/release/v0.3.3`에 생성합니다. Windows 배포는 앞으로 항상 EXE이며 ZIP은 내부 패키징에만 사용합니다. EXE는 구성 파일 무결성을 확인하고 `%LOCALAPPDATA%/SoundManager/versions`에 풀어 실행합니다. Android 서명 키는 `%LOCALAPPDATA%/SoundManager/release-signing`에 보관하며 업데이트를 위해 보존해야 합니다. [릴리스·서명 안내](docs/releasing.md)
 - CI: push/PR마다 Windows 빌드·테스트, Android APK 빌드·lint를 실행하고 GitHub Actions artifact로 저장합니다.
 
 ## 현재 제약
@@ -116,4 +126,4 @@ cd android
 | `docs/protocol.md` | 통신 규격 |
 | `docs/validation.md` | 빌드/테스트 결과와 실기기 점검 절차 |
 
-MIT 라이선스. 현재 버전 `0.3.2` (시험 배포). 포함한 라이브러리·터널 도구의 라이선스는 `THIRD-PARTY-NOTICES.md`를 참조하세요.
+MIT 라이선스. 현재 버전 `0.3.3` (시험 배포). 포함한 라이브러리·터널 도구의 라이선스는 `THIRD-PARTY-NOTICES.md`를 참조하세요.

@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
+using System.IO;
 using NAudio.Wave;
 using SoundManager.Core;
 
@@ -32,7 +33,9 @@ internal sealed class AudioSender : IAsyncDisposable
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop.Token, cancellation);
         timeout.CancelAfter(TimeSpan.FromSeconds(8));
         await socket.ConnectAsync(endpoint, timeout.Token);
-        var hello = JsonSerializer.SerializeToUtf8Bytes(new AudioHello(1, name, format), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var deviceId = ClientDeviceIdentity.Get(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "SoundManager", "client-device-id.txt"));
+        var hello = JsonSerializer.SerializeToUtf8Bytes(new AudioHello(1, name, format, deviceId), new JsonSerializerOptions(JsonSerializerDefaults.Web));
         await socket.SendAsync(hello.AsMemory(), WebSocketMessageType.Text, true, timeout.Token);
         byte[] ready = new byte[4096];
         var response = await socket.ReceiveAsync(ready.AsMemory(), timeout.Token);

@@ -58,7 +58,7 @@ public final class MainActivity extends Activity {
         captureButton=Ui.button(capture,"소리 전송 시작",()->{
             if (CaptureService.active) stopService(new Intent(this,CaptureService.class)); else requestCapture();
         });
-        Ui.text(root,"Sound Manager 0.3.0",12,Ui.SUB);
+        Ui.text(root,"Sound Manager "+BuildConfig.VERSION_NAME,12,Ui.SUB);
         final int restoreSession=session;
         io.execute(()->{
             int generation=restoreSession;

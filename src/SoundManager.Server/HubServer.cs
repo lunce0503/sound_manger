@@ -11,11 +11,15 @@ using SoundManager.Core;
 
 namespace SoundManager.Server;
 
-public sealed class HubServer(Mixer mixer, string token, int port = 17842, string host = "0.0.0.0") : IAsyncDisposable
+public sealed class HubServer(Mixer mixer, string token, int port = 17842, string host = "0.0.0.0",
+    string? sourceSettingsPath = null) : IAsyncDisposable
 {
     public const int MaxMessageBytes = 65536;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private WebApplication? app;
+    private readonly SourceSettingsStore savedSettings = new(sourceSettingsPath);
+    private readonly object sourcesGate = new();
+    private readonly Dictionary<Guid, (Guid? DeviceId, WebSocket Socket)> sessions = [];
     public string[] Addresses => app?.Urls.ToArray() ?? [];
     public static string CreateToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
 
@@ -51,7 +55,17 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
         application.MapPut("/v1/sources/{id:guid}", (Guid id, SourceSettings settings) =>
         {
             if (!settings.IsValid) return Results.BadRequest("음량 0–2, 방향 0 이상 360 미만");
-            return mixer.ConfigureSource(id, settings) ? Results.Ok() : Results.NotFound();
+            lock (sourcesGate)
+            {
+                if (!sessions.TryGetValue(id, out var session)) return Results.NotFound();
+                try
+                {
+                    if (session.DeviceId is Guid deviceId) savedSettings.Save(deviceId, settings);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                { return Results.Problem("기기 설정을 저장하지 못했습니다. 이전 설정을 유지합니다.", statusCode: 503); }
+                return mixer.ConfigureSource(id, settings) ? Results.Ok() : Results.NotFound();
+            }
         });
         application.Map("/v1/audio", HandleAudioAsync);
         try { await application.StartAsync(cancellation); app = application; }
@@ -72,7 +86,26 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
             var hello = JsonSerializer.Deserialize<AudioHello>(buffer.AsSpan(0, first.Count), Json);
             if (hello is null || hello.Version != 1 || hello.Format is null)
                 throw new ArgumentException("프로토콜 버전은 1입니다.");
-            id = mixer.AddSource(hello.Name, hello.Format);
+            if (hello.DeviceId == Guid.Empty) throw new ArgumentException("기기 ID는 빈 GUID일 수 없습니다.");
+            hello.Format.Validate();
+            if (string.IsNullOrWhiteSpace(hello.Name) || hello.Name.Length > 64) throw new ArgumentException("잘못된 기기 이름");
+            lock (sourcesGate)
+            {
+                // A reconnect may arrive before the previous network session times out.
+                if (hello.DeviceId is Guid deviceId)
+                {
+                    var previous = sessions.FirstOrDefault(s => s.Value.DeviceId == deviceId);
+                    if (previous.Key != Guid.Empty)
+                    {
+                        sessions.Remove(previous.Key);
+                        mixer.RemoveSource(previous.Key);
+                        previous.Value.Socket.Abort();
+                    }
+                }
+                id = mixer.AddSource(hello.Name, hello.Format,
+                    hello.DeviceId is Guid stableId ? savedSettings.Get(stableId) : null);
+                sessions.Add(id.Value, (hello.DeviceId, socket));
+            }
             var ready = JsonSerializer.SerializeToUtf8Bytes(new { sourceId = id }, Json);
             await socket.SendAsync(ready.AsMemory(), WebSocketMessageType.Text, true, context.RequestAborted);
             while (socket.State == WebSocketState.Open)
@@ -99,7 +132,14 @@ public sealed class HubServer(Mixer mixer, string token, int port = 17842, strin
             }
         }
         catch (Exception ex) when (ex is WebSocketException or OperationCanceledException) { }
-        finally { if (id.HasValue) mixer.RemoveSource(id.Value); }
+        finally
+        {
+            if (id.HasValue) lock (sourcesGate)
+            {
+                sessions.Remove(id.Value);
+                mixer.RemoveSource(id.Value);
+            }
+        }
     }
 
     private static async Task<(WebSocketMessageType Type, int Count)> ReceiveMessageAsync(

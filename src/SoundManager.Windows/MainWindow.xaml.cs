@@ -111,7 +111,8 @@ public partial class MainWindow : Window
             { await StopServer(); Status.Text = "출력 장치 연결 종료: " + args.Exception.Message; });
         };
         string key = connections.ServerKey();
-        var candidate = new HubServer(mixer, key);
+        var candidate = new HubServer(mixer, key, sourceSettingsPath: Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoundManager", "source-settings.json"));
         try
         {
             await candidate.StartAsync(cancellation);

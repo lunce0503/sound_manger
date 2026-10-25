@@ -49,13 +49,14 @@ public final class CaptureService extends Service {
             wakeLock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SoundManager:Capture");
             wakeLock.acquire(4 * 60 * 60 * 1000L);
             Api api = new Api(intent.getStringExtra("address"), intent.getStringExtra("key"));
+            String deviceId=DeviceIdentity.get(this);
             Request request = new Request.Builder().url(api.address + "/v1/audio").header("X-Sound-Key", api.key).build();
             socket = Api.CLIENT.newWebSocket(request, new WebSocketListener() {
                 private boolean ready;
                 @Override public void onOpen(WebSocket ws, Response response) {
                     try {
                         JSONObject format = new JSONObject().put("sampleRate", 48000).put("channels", 2).put("encoding", "pcm16");
-                        ws.send(new JSONObject().put("version", 1).put("name", Build.MODEL).put("format", format).toString());
+                        ws.send(new JSONObject().put("version", 1).put("name", Build.MODEL).put("format", format).put("deviceId",deviceId).toString());
                     } catch (Exception error) { finish(error.getMessage()); }
                 }
                 @Override public void onMessage(WebSocket ws, String text) {

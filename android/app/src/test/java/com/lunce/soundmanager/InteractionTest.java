@@ -51,6 +51,18 @@ public class InteractionTest {
         assertTrue(views.stream().anyMatch(v->v instanceof TextView && ((TextView)v).getText().toString().equals("전체 음량")));
         assertFalse(views.stream().anyMatch(v->v instanceof TextView && ((TextView)v).getText().toString().equals("저음")));
     }
+
+    @Test public void reconnectedSourceCardShowsRestoredVolumePositionAndMute() throws Exception {
+        MainActivity activity=activity(); withDevice(activity);
+        activity.showState(new JSONObject("{\"settings\":{\"masterVolume\":0.7},\"sources\":[]}"));
+        activity.showState(new JSONObject("{\"settings\":{\"masterVolume\":0.7},\"sources\":[{\"id\":\"new-session\",\"name\":\"테스트 휴대폰\",\"settings\":{\"volume\":0.35,\"muted\":true,\"spatial\":true,\"azimuth\":275}}]}"));
+        List<View> views=all(activity.getWindow().getDecorView());
+        Switch mute=(Switch)views.stream().filter(v->v instanceof Switch && ((Switch)v).getText().toString().equals("음소거")).findFirst().orElseThrow(AssertionError::new);
+        assertTrue(mute.isChecked());
+        SeekBar gain=(SeekBar)views.stream().filter(v->v instanceof SeekBar && "기기 음량".contentEquals(v.getContentDescription())).findFirst().orElseThrow(AssertionError::new);
+        assertEquals(35,gain.getProgress());
+        assertTrue(views.stream().anyMatch(v->v instanceof TextView && ((TextView)v).getText().toString().contains("275")));
+    }
     @Test public void muteHasReadableLabelSpeakerIconAndToggleState() throws Exception {
         MainActivity activity=activity(); withDevice(activity);
         Switch mute=(Switch)all(activity.getWindow().getDecorView()).stream().filter(v->v instanceof Switch && ((Switch)v).getText().toString().equals("음소거")).findFirst().orElseThrow(AssertionError::new);
