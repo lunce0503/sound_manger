@@ -1,0 +1,23 @@
+name: Rust DSP compatibility
+on:
+  push:
+    branches: [main, feature/rust-audio-server]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  dsp:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Rust tools
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - name: Verify C# golden baseline and Rust DSP
+        shell: pwsh
+        run: ./scripts/test-rust.ps1

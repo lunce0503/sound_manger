@@ -12,6 +12,7 @@ internal sealed class BackgroundWindowLifetime : IDisposable
     private readonly Action exit;
     private readonly Forms.NotifyIcon? tray;
     private readonly Forms.ContextMenuStrip? menu;
+    private readonly System.Drawing.Icon? applicationIcon;
     private bool allowClose, notified, exiting, disposed;
     private Task? exitTask;
 
@@ -26,9 +27,14 @@ internal sealed class BackgroundWindowLifetime : IDisposable
         menu.Items.Add("Sound Manager 열기", null, (_, _) => Restore());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("완전 종료 (서버 중지)", null, async (_, _) => await ExitAsync());
+        using (var stream = Application.GetResourceStream(new Uri("pack://application:,,,/SoundManager.Windows;component/Assets/SoundManager.ico")).Stream)
+        {
+            using var loaded = new System.Drawing.Icon(stream, 32, 32);
+            applicationIcon = (System.Drawing.Icon)loaded.Clone();
+        }
         tray = new Forms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = applicationIcon,
             Text = "Sound Manager · 백그라운드 대기",
             ContextMenuStrip = menu,
             Visible = true
@@ -92,5 +98,6 @@ internal sealed class BackgroundWindowLifetime : IDisposable
         disposed = true;
         if (tray is not null) { tray.Visible = false; tray.Dispose(); }
         menu?.Dispose();
+        applicationIcon?.Dispose();
     }
 }

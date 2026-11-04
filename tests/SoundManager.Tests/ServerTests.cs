@@ -71,6 +71,11 @@ public sealed class ServerTests : IAsyncLifetime
         await socket.SendAsync(packet.AsMemory(3001), WebSocketMessageType.Binary, true, timeout.Token);
         await UntilAsync(() => mixer.Snapshot().Sources.Single().BufferedMs > 0);
         var output = new float[960]; mixer.Render(output); Assert.Contains(output, x => x != 0);
+        using var state = JsonDocument.Parse(await http.GetStringAsync("/v1/state"));
+        var diagnostics = state.RootElement.GetProperty("sources")[0].GetProperty("diagnostics");
+        Assert.Equal(1, diagnostics.GetProperty("receivedPackets").GetInt64());
+        Assert.Equal(50, diagnostics.GetProperty("lastPacketAudioMs").GetDouble());
+        Assert.Equal(1, state.RootElement.GetProperty("diagnostics").GetProperty("renderCalls").GetInt64());
         await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", timeout.Token);
         await UntilAsync(() => mixer.Snapshot().Sources.Length == 0);
     }

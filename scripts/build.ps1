@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 try {
+    & "$PSScriptRoot\build-rust.ps1"
     dotnet build SoundManager.sln -c Release
     if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
     dotnet test tests/SoundManager.Tests -c Release --no-build

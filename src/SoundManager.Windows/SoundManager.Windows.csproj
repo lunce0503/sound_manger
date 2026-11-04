@@ -13,6 +13,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <ApplicationIcon>../../assets/sound-manager.ico</ApplicationIcon>
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -21,6 +22,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="../../assets/sound-manager.ico" Link="Assets/SoundManager.ico" />
+    <Content Include="../../assets/sound-manager.ico" Link="sound-manager.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../rust/target/release/sound-manager-server.exe" Link="sound-manager-server.exe" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../rust/target/release/sound-manager-server.exe')" />
+    <Content Include="../../rust/target/debug/sound-manager-server.exe" Link="sound-manager-server.exe" CopyToOutputDirectory="PreserveNewest" Condition="!Exists('../../rust/target/release/sound-manager-server.exe') And Exists('../../rust/target/debug/sound-manager-server.exe')" />
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
     <InternalsVisibleTo Include="SoundManager.Windows.Tests" />

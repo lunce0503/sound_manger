@@ -1,0 +1,13 @@
+[package]
+name = "sound-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Render-owned, platform-independent Sound Manager v1 DSP"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true

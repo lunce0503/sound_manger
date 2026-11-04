@@ -22,6 +22,8 @@ public partial class App : Application
         }
         var window = new MainWindow();
         MainWindow = window;
+        try {DesktopShortcuts.Ensure();}
+        catch(Exception) { /* The app remains usable if Windows blocks shortcut creation. */ }
         instance.Listen(() => Dispatcher.BeginInvoke(() =>
         {
             if (!Dispatcher.HasShutdownStarted) window.RestoreFromTray();

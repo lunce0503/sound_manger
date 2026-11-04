@@ -44,8 +44,51 @@ public sealed class SourceListTests
             Assert.Equal(1, changes); Assert.False(mixer.GetSourceSettings(id)!.Muted);
             view.Refresh(mixer.Snapshot().Sources); Assert.Equal(1, changes);
             menu.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert.Equal(new[] {"음량 조절", "이름 변경", "360° 방향 설정"}, menu.ContextMenu.Items.Cast<MenuItem>().Select(item => item.Header));
+            Assert.Equal(new[] {"음량 조절", "이름 변경", "360° 방향 설정", "통신·재생 진단"}, menu.ContextMenu.Items.Cast<MenuItem>().Select(item => item.Header));
             menu.ContextMenu.IsOpen = false;
+        }
+        finally { window.Close(); }
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task DiagnosticsDialogShowsMeasurementsWithoutChangingSourceSettings() => BackgroundLifetimeTests.OnDesktop(() =>
+    {
+        var mixer = new Mixer(); var id = mixer.AddSource("진단 기기", new(48000, 2, "pcm16"));
+        mixer.Push(id, new byte[48000 * 4 * 325 / 1000]); mixer.Render(new float[960]);
+        int changes = 0;
+        var view = new SourceListView((_, _) => { changes++; return SourceUpdateResult.Updated; });
+        var window = new Window { Content = view, Width = 680, Height = 240, ShowInTaskbar = false, Left = -10000, Top = -10000 };
+        try
+        {
+            var state = mixer.Snapshot(); view.Refresh(state.Sources, state.Diagnostics);
+            window.Show(); window.UpdateLayout();
+            var more = Assert.Single(Descendants<Button>(view));
+            more.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var item = more.ContextMenu.Items.Cast<MenuItem>().Single(item => Equals(item.Header, "통신·재생 진단"));
+            more.ContextMenu.IsOpen = false;
+            Exception? failure = null;
+            Dispatcher.CurrentDispatcher.BeginInvoke(() =>
+            {
+                var dialog = window.OwnedWindows.Cast<Window>().Single();
+                try
+                {
+                    dialog.UpdateLayout();
+                    var text = Assert.Single(Descendants<TextBox>(dialog));
+                    Assert.True(text.IsReadOnly);
+                    Assert.Contains("진단 기기", text.Text);
+                    Assert.Contains("지연 축소: 1회", text.Text);
+                    Assert.Contains("PCM 수신: 1개", text.Text);
+                    Assert.Contains("서버 출력 요청: 1회", text.Text);
+                    Assert.Contains("네트워크 왕복 지연이 아닙니다", text.Text);
+                    Assert.Contains(Descendants<Button>(dialog), button => Equals(button.Content, "진단 복사"));
+                }
+                catch (Exception error) { failure = error; }
+                finally { dialog.Close(); }
+            });
+            item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            if (failure is not null) throw failure;
+            Assert.Equal(0, changes);
         }
         finally { window.Close(); }
         return Task.CompletedTask;

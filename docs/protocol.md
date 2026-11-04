@@ -95,6 +95,30 @@ v0.4.0은 `settings.displayName`에 사용자 지정 이름을 저장하고 `sou
 
 인증 실패는 소스를 등록하지 않고 close `1008`로 종료합니다. 인증 전 제한 시간·최대 메시지는 기존과 같습니다. 인증 후 ready sourceId와 바이너리 PCM·keepalive·설정 제어는 동일합니다. 기존 `/v1/audio`와 HTTP 제어는 계속 X-Sound-Key를 요구합니다. 확장 Origin 검사 자체는 인증을 대신하지 않습니다.
 
+## 버퍼 복구와 서버 계측
+
+`bufferedMs`는 입력 PCM 링 버퍼 프레임 수를 입력 샘플레이트로 나눈 서버 내부 대기량입니다. 네트워크 왕복 시간이나 종단 간 오디오 지연이 아닙니다. 시작/재버퍼링 기준은 40 ms이며, 목표 대기량은 60 ms입니다. 렌더 시작 시 `max(120 ms, 이번 요청에 필요한 입력 프레임 + 60 ms)`를 넘으면 오래된 프레임을 버리고 이번 요청 분량과 약 60 ms를 남깁니다. ±0.2% 속도 보정은 작은 클럭 드리프트에만 사용합니다. 출력 정지 중에도 메모리는 약 500 ms로 제한됩니다. 버퍼 축소는 이전 오디오를 건너뛰므로 해당 구간은 연속 재생되지 않습니다.
+
+`GET /v1/state`에는 기존 필드를 유지하면서 다음 읽기 전용 객체를 추가합니다. 모든 시간은 ms이며 단조 증가하는 서버 시계를 사용합니다. 측정 전의 최근 간격/경과 시간은 `null`, 누적 최대값과 횟수는 0입니다.
+
+| 위치 | 필드 | 의미 |
+| --- | --- | --- |
+| `sources[].diagnostics` | `receivedPackets`, `lastPacketAudioMs` | 완성된 PCM 메시지 수와 최근 메시지의 오디오 분량. 핸드셰이크/keepalive/개별 fragment는 제외 |
+| 동일 | `lastReceiveIntervalMs`, `maxReceiveIntervalMs` | PCM 메시지가 `Mixer.Push`에 도착한 간격 최근/최대 |
+| 동일 | `maxReceiveExcessMs` | `수신 간격 - 이번 패킷 오디오 분량`의 양수 최대. 송신 타임스탬프가 없어 순수 네트워크 지터와 다름 |
+| 동일 | `lastReceiveAgoMs` | 최근 PCM 도착 이후 경과 시간. 무음으로 전송이 없는 경우에도 증가 |
+| 동일 | `lastIngestMs`, `maxIngestMs` | 입력 잠금 대기와 PCM 디코딩/링 기록을 합친 처리 시간 최근/최대 |
+| 동일 | `peakBufferedMs` | 수신 직후 관측한 서버 링 버퍼 대기량 최대 (메모리 상한 적용 후) |
+| 동일 | `latencyTrims`, `latencyTrimmedFrames` | 지연 복구 횟수/의도적으로 버린 입력 프레임 수. 기존 `droppedFrames`에도 포함되므로 용량 초과 폐기는 두 값의 차이 |
+| 동일 | `targetBufferMs`, `trimThresholdMs` | 목표 60 ms와 기본 축소 기준 120 ms. 큰 출력 요청에는 위 보정 적용 |
+| 최상위 `diagnostics` | `renderCalls`, `lastRequestedAudioMs` | 전체 믹서 렌더 호출 수/최근 요청 오디오 분량 |
+| 동일 | `lastRenderIntervalMs`, `maxRenderIntervalMs` | 출력 요청 시작 간격 최근/최대 |
+| 동일 | `maxRenderDelayMs`, `lateRenderCalls` | 이전 요청 오디오 분량을 초과한 양수 공백 최대/그 공백이 20 ms를 초과한 횟수 |
+| 동일 | `lastRenderAgoMs` | 최근 출력 요청 시작 이후 경과 시간 |
+| 동일 | `lastRenderWorkMs`, `maxRenderWorkMs` | 소스 믹싱/EQ/클리핑을 포함한 렌더 처리 시간 최근/최대 |
+
+소스 계측은 소스 연결마다, 출력 계측은 `Mixer` 생성마다 초기화합니다 (Windows에서는 앱 실행마다). 진단 조회는 카운터를 초기화하지 않습니다. 출력 요청은 WASAPI가 요청한 블록을 믹서가 채우는 시점으로, OS/Bluetooth의 실제 청취 시점이 아닙니다. 파일 기록이나 네트워크 전송은 오디오 처리 스레드에 추가하지 않습니다. 진단 화면의 **진단 복사**로 장애 전후 값을 보관할 수 있습니다.
+
 ## DSP 순서
 
 `입력별 PCM decode → bounded buffer → 서버 레이트 변환 → 선택적 가상 방향 → 소스 음량/음소거 → 합산 → 저음/고음/명료도 EQ → 전체 음량 → hard clip → WASAPI → OS Bluetooth 출력`

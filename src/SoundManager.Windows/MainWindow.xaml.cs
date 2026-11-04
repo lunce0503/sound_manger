@@ -17,7 +17,7 @@ namespace SoundManager.Windows;
 
 public partial class MainWindow : Window
 {
-    private readonly Mixer mixer = new();
+    private readonly RemoteMixer mixer = new();
     private readonly MMDeviceEnumerator enumerator = new();
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly BackgroundWindowLifetime lifetime;
@@ -28,9 +28,7 @@ public partial class MainWindow : Window
     private SavedOutputDevice? savedOutput;
     private CancellationTokenSource? automaticStart;
     private Task automaticStartTask = Task.CompletedTask;
-    private HubServer? server;
-    private WasapiOut? output;
-    private MMDevice? outputDevice;
+    private RustBackend? server;
     private AudioSender? sender;
     private ExternalTunnel? tunnel;
     private string? externalAddress;
@@ -46,13 +44,14 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        sourceList = new SourceListView((id, changes) =>
+        sourceList = new SourceListView(async (id, changes) =>
         {
-            var result = server?.UpdateSource(id, changes) ?? SourceUpdateResult.NotFound;
+            var result = server is {} backend ? await backend.UpdateSourceAsync(id, changes) : SourceUpdateResult.NotFound;
             sourceList!.Refresh(mixer.Snapshot().Sources);
             return result;
         });
         SourceListHost.Children.Add(sourceList);
+        mixer.Failed+=()=>Status.Text="Rust 서버 제어에 실패했습니다. 연결 상태를 확인하세요.";
         try
         {
             savedOutput = deviceStore.Load();
@@ -126,29 +125,27 @@ public partial class MainWindow : Window
     private async Task StartServerAsync(DeviceItem selected, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
-        outputDevice = enumerator.GetDevice(selected.Id);
-        output = new WasapiOut(outputDevice, AudioClientShareMode.Shared, true, 60);
-        output.Init(new MixerProvider(mixer));
-        output.PlaybackStopped += (_, args) =>
-        {
-            if (args.Exception is not null) Dispatcher.BeginInvoke(async () =>
-            { await StopServer(); Status.Text = "출력 장치 연결 종료: " + args.Exception.Message; });
-        };
         string key = connections.ServerKey();
-        var candidate = new HubServer(mixer, key, sourceSettingsPath: Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoundManager", "source-settings.json"));
+        var candidate = new RustBackend();
+        candidate.Failed+=()=>Dispatcher.BeginInvoke(async ()=>
+        {
+            if(server!=candidate||closing)return;
+            await StopServer();Status.Text="Rust 서버 연결 종료 · 저장된 출력 장치로 재시도합니다.";
+            StartAutomatically(force:true);
+        });
         try
         {
-            await candidate.StartAsync(cancellation);
+            await candidate.StartAsync(Path.Combine(AppContext.BaseDirectory,"sound-manager-server.exe"),selected.Id,key,
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SoundManager","source-settings.json"),mixer.Settings,cancellation);
             cancellation.ThrowIfCancellationRequested();
-            server = candidate; output.Play();
+            server = candidate; mixer.Attach(candidate);
         }
         catch { await candidate.DisposeAsync(); throw; }
         PairingKey.Text = key; ServerButton.Content = "서버 중지"; OutputDevices.IsEnabled = false;
         RefreshPairAddresses();
         ExternalButton.IsEnabled = true;
         ServerAddress.Text = "같은 네트워크에서는 QR 인증의 주소를 선택하세요.";
-        Status.Text = "서버 실행 중 · Android 앱에서 QR을 스캔하세요.";
+        Status.Text = "Rust 서버 실행 중 · Android 앱에서 QR을 스캔하세요.";
     }
 
     private DeviceItem[] ReadOutputDevices()
@@ -259,8 +256,7 @@ public partial class MainWindow : Window
         tunnelStart?.Cancel();
         await StopExternal();
         var current = server; server = null;
-        output?.Stop(); output?.Dispose(); output = null;
-        outputDevice?.Dispose(); outputDevice = null;
+        mixer.Detach();
         if (current is not null) await current.DisposeAsync();
         ServerButton.Content = "서버 시작"; OutputDevices.IsEnabled = true; PairingKey.Clear();
         PairAddress.ItemsSource = null; PairQr.Source = null; PairQr.Visibility = Visibility.Collapsed;
@@ -428,12 +424,15 @@ public partial class MainWindow : Window
         { mixer.Settings = MixSettings.Preset(name, mixer.Settings.MasterVolume); Status.Text = $"EQ: {button.Content}"; }
     }
 
-    private void RefreshState()
+    private async void RefreshState()
     {
+        if(closing)return;
+        await mixer.RefreshAsync();
+        if(closing)return;
         lifetime.SetStatus(server is not null ? "서버 실행 중" : sender is not null ? "음원 전송 중" : automaticStart is not null ? "자동 시작 대기 중" : "대기 중");
         var state = mixer.Snapshot();
         if (!MasterVolume.IsMouseCaptureWithin) MasterVolume.Value = state.Settings.MasterVolume * 100;
-        sourceList.Refresh(state.Sources);
+        sourceList.Refresh(state.Sources, state.Diagnostics);
         _=UpdateOnIdleAsync();
     }
 

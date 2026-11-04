@@ -79,6 +79,15 @@ v0.2.0 Android 릴리스 인증서 SHA256(공개 식별자): `7217017ad413a98cc7
 6. 무음 30초 후 재생, Wi-Fi 단절/재연결, 서버 재시작, 잘못된 연결 키, Bluetooth 연결 해제/출력 장치 재선택을 확인합니다.
 7. 30분 연속 재생 중 버퍼 지연, underruns, droppedFrames, clippedSamples와 실제 소리 끊김을 기록합니다. 두 기기 동시 출력의 시간 정렬을 보장하는 테스트는 아닙니다.
 
+## 2026-10-25 버퍼 복구·지연 계측 검증
+
+- `dotnet build SoundManager.sln -c Release`: 성공, 경고/오류 0개.
+- `dotnet test tests/SoundManager.Tests -c Release --no-build`: 71개 통과.
+- `dotnet test tests/SoundManager.Windows.Tests -c Release --no-build`: 20개 통과.
+- 합성 PCM으로 8/44.1/48/192 kHz 입력의 325 ms 대기를 다음 10 ms 렌더 후 약 60 ms로 줄이고 최근 오디오가 남는지 검증했습니다. 60/200 ms 출력 요청, 음소거, 언더런 재버퍼링 및 정상 연속 스트림도 검증했습니다.
+- 제어 가능한 단조 시계로 수신 공백과 출력 공백을 각각 검증하고, 실제 HTTP/WebSocket 통합 테스트에서 완성된 PCM 메시지만 수신 횟수에 반영되는지 확인했습니다. WPF 테스트에서 진단 메뉴/창과 표시값을 확인했습니다.
+- 변경한 빌드를 실제 Android/Bluetooth 청취 경로에 적용하는 검증은 아직 하지 않았습니다. 실행 중인 기존 앱은 교체하거나 중지하지 않았습니다.
+
 ## 후속 개발
 
 - 실기기에서 출력/캡처 장치 변경, 지연과 클럭 드리프트 측정.

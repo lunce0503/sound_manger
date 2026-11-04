@@ -86,3 +86,6 @@ __pycache__/
 *.pyc
 TestResults/
 node_modules/
+
+# Rust build output (Cargo.lock remains tracked)
+target/

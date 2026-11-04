@@ -50,5 +50,16 @@ public sealed record SourceSettingsPatch(float? Volume = null, float? Azimuth = 
 }
 
 public sealed record SourceState(Guid Id, string Name, AudioFormat Format,
-    SourceSettings Settings, double BufferedMs, long DroppedFrames, long Underruns);
-public sealed record MixerState(MixSettings Settings, SourceState[] Sources, long ClippedSamples);
+    SourceSettings Settings, double BufferedMs, long DroppedFrames, long Underruns,
+    SourceDiagnostics? Diagnostics = null);
+public sealed record MixerState(MixSettings Settings, SourceState[] Sources, long ClippedSamples,
+    RenderDiagnostics? Diagnostics = null);
+
+public sealed record SourceDiagnostics(long ReceivedPackets, double LastPacketAudioMs,
+    double? LastReceiveIntervalMs, double MaxReceiveIntervalMs, double MaxReceiveExcessMs,
+    double? LastReceiveAgoMs, double LastIngestMs, double MaxIngestMs, double PeakBufferedMs,
+    long LatencyTrims, long LatencyTrimmedFrames, double TargetBufferMs, double TrimThresholdMs);
+
+public sealed record RenderDiagnostics(long RenderCalls, double LastRequestedAudioMs,
+    double? LastRenderIntervalMs, double MaxRenderIntervalMs, double MaxRenderDelayMs,
+    double? LastRenderAgoMs, double LastRenderWorkMs, double MaxRenderWorkMs, long LateRenderCalls);

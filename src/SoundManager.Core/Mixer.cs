@@ -1,9 +1,14 @@
 namespace SoundManager.Core;
 
-public sealed class Mixer
+public sealed class Mixer(TimeProvider? timeProvider = null)
 {
     public const int SampleRate = 48000;
     public const int MaxSources = 16;
+    public const int StartBufferMs = 40;
+    public const int TargetBufferMs = 60;
+    public const int TrimThresholdMs = 120;
+    private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
+    private readonly RenderTiming renderTiming = new(timeProvider ?? TimeProvider.System);
     private readonly object sourcesGate = new();
     private AudioSource[] sources = [];
     private MixSettings settings = new();
@@ -29,7 +34,7 @@ public sealed class Mixer
         lock (sourcesGate)
         {
             if (sources.Length >= MaxSources) throw new InvalidOperationException("최대 16개 음원까지 연결할 수 있습니다.");
-            var source = new AudioSource(Guid.NewGuid(), name, format) { Settings = initialSettings ?? new() };
+            var source = new AudioSource(Guid.NewGuid(), name, format, clock) { Settings = initialSettings ?? new() };
             Volatile.Write(ref sources, [.. sources, source]);
             return source.Id;
         }
@@ -58,12 +63,14 @@ public sealed class Mixer
     }
 
     public MixerState Snapshot() => new(Settings,
-        Volatile.Read(ref sources).Select(s => s.Snapshot()).ToArray(), Interlocked.Read(ref clippedSamples));
+        Volatile.Read(ref sources).Select(s => s.Snapshot()).ToArray(), Interlocked.Read(ref clippedSamples), renderTiming.Snapshot());
 
     // Exactly one audio render thread calls Render; control and ingestion are thread safe.
     public void Render(Span<float> stereo)
     {
         if (stereo.Length % 2 != 0) throw new ArgumentException("스테레오 프레임 길이가 필요합니다.");
+        if (stereo.IsEmpty) return;
+        long begin = renderTiming.Begin(stereo.Length / 2d * 1000 / SampleRate);
         stereo.Clear();
         foreach (var source in Volatile.Read(ref sources)) source.Mix(stereo);
         var options = Settings;
@@ -82,5 +89,6 @@ public sealed class Mixer
             if (Math.Abs(value) > 1) Interlocked.Increment(ref clippedSamples);
             stereo[i] = float.IsFinite(value) ? Math.Clamp(value, -1, 1) : 0;
         }
+        renderTiming.End(begin);
     }
 }
