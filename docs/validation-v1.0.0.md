@@ -63,7 +63,11 @@ C# 결과는 기존 구현과의 비교값이며 이 구현의 알려진 정수 
 측정한 최종 native 서버 SHA256은
 `55680bc88dc0b1c54599689568ba2360727562943bfb3ca39c2c38350b0c1eff`입니다.
 그 뒤 변경한 WPF 제어 상태 순서 보장·외부 터널 보존은 native DSP를 변경하지 않습니다.
-최종 재패키징 때 native SHA256이 이 값과 일치하는지 다시 검사합니다.
+최종 재빌드 파일은 `161ec2f07cffa2b822a7b4e91ff1fc539f4b5d14b7270148f0928adadabb13b0`입니다.
+전체 해시가 달라 게시를 보류하고 비교한 결과, PE 빌드 시각과 PDB 식별 GUID의
+24 bytes만 달랐으며 실행 코드와 나머지 데이터는 모두 동일했습니다.
+`scripts/compare-native-builds.py`는 해당 메타데이터만 메모리에서 제외해 전체 바이트를
+비교합니다. 실제 EXE를 수정하지 않습니다. [비교 증거](validation/v1.0.0/native-rebuild-equivalence.json)를 보존합니다.
 
 ## 패키지·업데이트
 

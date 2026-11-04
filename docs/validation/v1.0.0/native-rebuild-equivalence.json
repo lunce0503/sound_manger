@@ -1,0 +1,7 @@
+{
+  "onlyPeTimestampsAndPdbGuidDiffer": true,
+  "normalizedSha256": "65fe264d82b874392f6c40f4d3dbb7d8016da14237a5316395f651c2ef2fc6e5",
+  "nativeCodeAndDataIdentical": true,
+  "testedSha256": "55680bc88dc0b1c54599689568ba2360727562943bfb3ca39c2c38350b0c1eff",
+  "rebuiltSha256": "161ec2f07cffa2b822a7b4e91ff1fc539f4b5d14b7270148f0928adadabb13b0"
+}
