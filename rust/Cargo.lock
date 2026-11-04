@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "sound-app"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -825,21 +825,21 @@ dependencies = [
 
 [[package]]
 name = "sound-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "sound-output"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "windows",
 ]
 
 [[package]]
 name = "sound-protocol"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "sound-core",
@@ -848,7 +848,7 @@ dependencies = [
 
 [[package]]
 name = "sound-server"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "axum",
  "crossbeam-queue",

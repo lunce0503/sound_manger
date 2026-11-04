@@ -370,7 +370,9 @@ public final class MainActivity extends Activity {
             LinearLayout content=Ui.column(MainActivity.this); Dialog dialog=settingsDialog("음량 조절",content);
             Ui.text(content,sourceName,14,Ui.SUB);
             Slider gain=new Slider(content,"기기 음량",200,(int)Math.round(settings.optDouble("volume",1)*100),0,"%",v->{});
-            Ui.button(content,"적용",()->{ try { patch(new JSONObject().put("volume",gain.value()/100d)); dialog.dismiss(); } catch (JSONException ignored) {} });
+            Switch automatic=new Switch(MainActivity.this);automatic.setText("입력 음량 자동 보정");automatic.setChecked(settings.optBoolean("autoGain",false));Ui.toggleStyle(automatic);content.addView(automatic);
+            Ui.text(content,"입력을 서버 기준 레벨로 보정한 뒤 음량 비율을 적용합니다.",14,Ui.SUB);
+            Ui.button(content,"적용",()->{ try { patch(new JSONObject().put("volume",gain.value()/100d).put("autoGain",automatic.isChecked())); dialog.dismiss(); } catch (JSONException ignored) {} });
             Ui.button(content,"취소",dialog::dismiss); showDialog(dialog);
         }
         private void showRename() {

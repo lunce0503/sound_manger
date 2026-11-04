@@ -370,6 +370,131 @@ async fn disk_failure_returns_503_without_applying_unpersisted_settings() {
     assert!(!fixture.state().await.sources[0].settings.muted);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn processing_and_per_input_gain_persist_without_legacy_clients_resetting_them() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("sources.json");
+    let mut fixture = Fixture::new(Some(path.clone())).await;
+    let device = Uuid::new_v4();
+    let mut socket = fixture.socket(false).await;
+    let id = fixture.hello(&mut socket, Some(device), false).await;
+    assert_eq!(
+        fixture.change(id, json!({"autoGain":true})).await,
+        StatusCode::OK
+    );
+    let put = fixture
+        .http
+        .put(format!("{}/v1/sources/{id}", fixture.url))
+        .header("X-Sound-Key", &fixture.key)
+        .json(&json!({"volume":0.6}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::OK);
+    assert!(fixture.state().await.sources[0].settings.auto_gain);
+    let settings = sound_core::ProcessingSettings {
+        target_dbfs: -21.0,
+        max_gain_db: 6.0,
+        ..sound_core::ProcessingSettings::recommended()
+    };
+    let response = fixture
+        .http
+        .put(format!("{}/v1/processing", fixture.url))
+        .header("X-Sound-Key", &fixture.key)
+        .json(&settings)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(fixture.state().await.processing, settings);
+    let response = fixture
+        .http
+        .put(format!("{}/v1/processing", fixture.url))
+        .header("X-Sound-Key", &fixture.key)
+        .json(&json!({"maxGainDb":25}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(fixture.state().await.processing, settings);
+    fixture.close(&mut socket).await;
+    fixture.server.stop().await;
+    let restarted = Fixture::new(Some(path)).await;
+    assert_eq!(restarted.state().await.processing, settings);
+    let mut socket = restarted.socket(false).await;
+    restarted.hello(&mut socket, Some(device), false).await;
+    assert!(restarted.state().await.sources[0].settings.auto_gain);
+    assert_eq!(restarted.state().await.sources[0].settings.volume, 0.6);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn failed_processing_save_preserves_active_configuration() {
+    let folder = tempfile::tempdir().unwrap();
+    let fixture = Fixture::new(Some(folder.path().join("sources.json"))).await;
+    std::fs::create_dir(folder.path().join("processing-settings.json")).unwrap();
+    let original = fixture.state().await.processing;
+    let response = fixture
+        .http
+        .put(format!("{}/v1/processing", fixture.url))
+        .header("X-Sound-Key", &fixture.key)
+        .json(&sound_core::ProcessingSettings::default())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(fixture.state().await.processing, original);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sixteen_source_limit_and_pending_hello_respect_the_update_gate() {
+    let fixture = Fixture::new(None).await;
+    let mut pending = fixture.socket(false).await;
+    assert!(fixture.server.hub.begin_update(true).await);
+    pending.send(Message::Text(json!({"version":1,"name":"late hello","format":{"sampleRate":48000,"channels":2,"encoding":"pcm16"}}).to_string().into())).await.unwrap();
+    assert!(matches!(
+        pending.next().await.unwrap().unwrap(),
+        Message::Close(_)
+    ));
+    assert!(fixture.state().await.sources.is_empty());
+    fixture.server.hub.cancel_update().await;
+    let mut sockets = Vec::new();
+    for _ in 0..16 {
+        let mut socket = fixture.socket(false).await;
+        fixture.hello(&mut socket, None, false).await;
+        sockets.push(socket);
+    }
+    let mut excess = fixture.socket(false).await;
+    excess.send(Message::Text(json!({"version":1,"name":"excess","format":{"sampleRate":48000,"channels":2,"encoding":"pcm16"}}).to_string().into())).await.unwrap();
+    assert!(matches!(
+        excess.next().await.unwrap().unwrap(),
+        Message::Close(_)
+    ));
+    assert_eq!(fixture.state().await.sources.len(), 16);
+    for socket in &mut sockets {
+        fixture.close(socket).await;
+    }
+    fixture.wait_count(0).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn missing_hello_and_oversized_audio_close_without_leaking_sources() {
+    let fixture = Fixture::new(None).await;
+    let mut silent = fixture.socket(false).await;
+    let reply = tokio::time::timeout(Duration::from_secs(12), silent.next())
+        .await
+        .unwrap();
+    assert!(matches!(reply, Some(Ok(Message::Close(_)))));
+    assert!(fixture.state().await.sources.is_empty());
+    let mut socket = fixture.socket(false).await;
+    fixture.hello(&mut socket, None, false).await;
+    socket
+        .send(Message::Binary(vec![0; 65540].into()))
+        .await
+        .unwrap();
+    let _ = socket.next().await;
+    fixture.wait_count(0).await;
+}
+
 #[test]
 fn corrupted_store_is_preserved_and_pascal_case_document_can_be_read_again() {
     let folder = tempfile::tempdir().unwrap();

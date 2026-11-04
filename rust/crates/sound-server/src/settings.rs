@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sound_core::SourceSettings;
+use sound_core::{ProcessingSettings, SourceSettings};
 use std::{
     collections::HashMap,
     fs,
@@ -24,6 +24,8 @@ struct StoredSettings {
     muted: bool,
     #[serde(default)]
     display_name: Option<String>,
+    #[serde(default)]
+    auto_gain: bool,
 }
 impl From<SourceSettings> for StoredSettings {
     fn from(value: SourceSettings) -> Self {
@@ -33,6 +35,7 @@ impl From<SourceSettings> for StoredSettings {
             spatial: value.spatial,
             muted: value.muted,
             display_name: value.display_name,
+            auto_gain: value.auto_gain,
         }
     }
 }
@@ -44,6 +47,7 @@ impl From<&StoredSettings> for SourceSettings {
             spatial: value.spatial,
             muted: value.muted,
             display_name: value.display_name.clone(),
+            auto_gain: value.auto_gain,
         }
     }
 }
@@ -100,26 +104,78 @@ impl SettingsStore {
             if data.len() > 1_048_576 {
                 return Err(io::Error::other("Settings file too large"));
             }
-            let folder = path
-                .parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or(Path::new("."));
-            fs::create_dir_all(folder)?;
-            let temporary = folder.join(format!(".source-settings-{}.tmp", Uuid::new_v4()));
-            let result = (|| {
-                let mut file = fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&temporary)?;
-                file.write_all(&data)?;
-                file.sync_all()?;
-                drop(file);
-                fs::rename(&temporary, path)
-            })();
-            let _ = fs::remove_file(&temporary);
-            result?;
+            atomic_write(path, &data)?;
         }
         self.devices = next;
+        Ok(())
+    }
+}
+
+fn atomic_write(path: &Path, data: &[u8]) -> io::Result<()> {
+    let folder = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    fs::create_dir_all(folder)?;
+    let temporary = folder.join(format!(".sound-settings-{}.tmp", Uuid::new_v4()));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(data)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)
+    })();
+    let _ = fs::remove_file(&temporary);
+    result
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct ProcessingDocument {
+    version: u32,
+    settings: ProcessingSettings,
+}
+pub struct ProcessingStore {
+    path: Option<PathBuf>,
+    value: ProcessingSettings,
+}
+impl ProcessingStore {
+    pub fn load(path: Option<PathBuf>) -> io::Result<Self> {
+        let value = if let Some(path) = path.as_ref().filter(|p| p.exists()) {
+            if fs::metadata(path)?.len() > 16384 {
+                return Err(io::Error::other("Processing settings too large"));
+            }
+            let document: ProcessingDocument = serde_json::from_slice(&fs::read(path)?)?;
+            if document.version != 1 || document.settings.validate().is_err() {
+                return Err(io::Error::other(
+                    "Invalid processing settings; preserved original",
+                ));
+            }
+            document.settings
+        } else {
+            ProcessingSettings::recommended()
+        };
+        Ok(Self { path, value })
+    }
+    pub fn get(&self) -> ProcessingSettings {
+        self.value
+    }
+    pub fn save(&mut self, value: ProcessingSettings) -> io::Result<()> {
+        value
+            .validate()
+            .map_err(|e| io::Error::other(e.to_string()))?;
+        if let Some(path) = &self.path {
+            atomic_write(
+                path,
+                &serde_json::to_vec(&ProcessingDocument {
+                    version: 1,
+                    settings: value,
+                })?,
+            )?;
+        }
+        self.value = value;
         Ok(())
     }
 }

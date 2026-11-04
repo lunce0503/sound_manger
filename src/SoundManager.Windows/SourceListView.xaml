@@ -39,7 +39,7 @@
       <Grid>
        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="44"/></Grid.ColumnDefinitions>
        <TextBlock Text="{Binding Name}" ToolTip="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" FontSize="17" Foreground="#EDF3FF" Margin="0,0,10,0"/>
-       <CheckBox Grid.Column="1" Style="{StaticResource MuteSwitch}" IsChecked="{Binding Muted,Mode=OneWay}" Checked="MuteChanged" Unchecked="MuteChanged"
+       <CheckBox Grid.Column="1" Style="{StaticResource MuteSwitch}" IsEnabled="{Binding IsEnabled}" IsChecked="{Binding Muted,Mode=OneWay}" Checked="MuteChanged" Unchecked="MuteChanged"
                  AutomationProperties.Name="{Binding Name,StringFormat={}{0} 음소거}"/>
        <Button Grid.Column="2" Content="⋮" FontSize="24" Padding="0" Height="44" Width="44" Margin="0" Background="Transparent" Foreground="#EDF3FF" BorderThickness="0"
                Click="OpenMenu" AutomationProperties.Name="기기 설정" ToolTip="기기 설정"/>

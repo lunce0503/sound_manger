@@ -1,6 +1,9 @@
 use crate::{
     AudioError, AudioFormat, MAX_SOURCES, MixSettings, SourceId, SourceSettings, SourceState,
-    biquad::Biquad, contracts::valid_name, source::AudioSource,
+    biquad::Biquad,
+    contracts::valid_name,
+    processing::{Limiter, ProcessingSettings},
+    source::AudioSource,
 };
 
 /// Render-owned mixer. Allocate sources and take snapshots outside the callback.
@@ -11,6 +14,8 @@ pub struct Mixer {
     applied: MixSettings,
     filters: [[Biquad; 3]; 2],
     clipped_samples: u64,
+    processing: ProcessingSettings,
+    limiter: Limiter,
 }
 
 impl Default for Mixer {
@@ -23,11 +28,27 @@ impl Default for Mixer {
             applied: settings,
             filters: Biquad::bank(settings),
             clipped_samples: 0,
+            processing: ProcessingSettings::default(),
+            limiter: Limiter::default(),
         }
     }
 }
 
 impl Mixer {
+    pub fn processing(&self) -> ProcessingSettings {
+        self.processing
+    }
+    pub fn set_processing(&mut self, settings: ProcessingSettings) -> Result<(), AudioError> {
+        settings.validate()?;
+        if settings.limiter_enabled != self.processing.limiter_enabled {
+            self.limiter = Limiter::default();
+        }
+        self.processing = settings;
+        for source in &mut self.sources {
+            source.configure_processing(settings);
+        }
+        Ok(())
+    }
     pub fn source_state(&self, id: SourceId) -> Option<SourceState> {
         self.sources
             .iter()
@@ -60,8 +81,9 @@ impl Mixer {
         }
         let id = SourceId(self.next_id);
         self.next_id = self.next_id.checked_add(1).ok_or(AudioError::SourceLimit)?;
-        self.sources
-            .push(AudioSource::new(id, name.to_owned(), format, settings));
+        let mut source = AudioSource::new(id, name.to_owned(), format, settings);
+        source.configure_processing(self.processing);
+        self.sources.push(source);
         Ok(id)
     }
 
@@ -119,20 +141,26 @@ impl Mixer {
             self.filters = Biquad::bank(self.settings);
             self.applied = self.settings;
         }
-        for (i, sample) in stereo.iter_mut().enumerate() {
-            let mut value = *sample;
-            for filter in &mut self.filters[i % 2] {
-                value = filter.process(value);
+        for frame in stereo.as_chunks_mut::<2>().0 {
+            let mut values = [0.0; 2];
+            for channel in 0..2 {
+                let mut value = frame[channel];
+                for filter in &mut self.filters[channel] {
+                    value = filter.process(value);
+                }
+                value *= self.settings.master_volume;
+                values[channel] = if value.is_finite() { value } else { 0.0 };
             }
-            value *= self.settings.master_volume;
-            if value.abs() > 1.0 {
-                self.clipped_samples += 1;
-            }
-            *sample = if value.is_finite() {
-                value.clamp(-1.0, 1.0)
+            if self.processing.limiter_enabled {
+                *frame = self.limiter.process(values, self.processing.peak_ceiling);
             } else {
-                0.0
-            };
+                for channel in 0..2 {
+                    if values[channel].abs() > 1.0 {
+                        self.clipped_samples += 1;
+                    }
+                    frame[channel] = values[channel].clamp(-1.0, 1.0);
+                }
+            }
         }
         Ok(())
     }

@@ -16,8 +16,7 @@ jobs:
       - name: Install Rust tools
         shell: pwsh
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
-          rustup default stable
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
       - name: Verify C# golden baseline and Rust DSP
         shell: pwsh
         run: ./scripts/test-rust.ps1

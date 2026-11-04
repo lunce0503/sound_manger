@@ -1,6 +1,7 @@
 use crate::{
     AudioError, AudioFormat, Encoding, SAMPLE_RATE, START_BUFFER_MS, SourceId, SourceSettings,
     SourceState, TARGET_BUFFER_MS, TRIM_THRESHOLD_MS,
+    processing::{Agc, ProcessingSettings},
     resampler::Resampler,
     ring_buffer::RingBuffer,
     spatial::{Direction, Spatial},
@@ -14,6 +15,8 @@ pub(crate) struct AudioSource {
     ring: RingBuffer,
     resampler: Resampler,
     spatial: Spatial,
+    agc: Agc,
+    clock_correction: bool,
     started: bool,
     dropped: u64,
     underruns: u64,
@@ -23,6 +26,10 @@ pub(crate) struct AudioSource {
 }
 
 impl AudioSource {
+    pub fn configure_processing(&mut self, settings: ProcessingSettings) {
+        self.clock_correction = settings.clock_correction;
+        self.agc.configure(settings);
+    }
     pub fn new(id: SourceId, name: String, format: AudioFormat, settings: SourceSettings) -> Self {
         Self {
             id,
@@ -32,6 +39,8 @@ impl AudioSource {
             ring: RingBuffer::new((format.sample_rate / 2 + 2) as usize),
             resampler: Resampler::default(),
             spatial: Spatial::default(),
+            agc: Agc::default(),
+            clock_correction: false,
             started: false,
             dropped: 0,
             underruns: 0,
@@ -117,7 +126,12 @@ impl AudioSource {
             return;
         }
         self.started = true;
-        let step = Resampler::step(self.format.sample_rate, self.ring.len(), reserve);
+        let step = Resampler::step(
+            self.format.sample_rate,
+            self.ring.len(),
+            reserve,
+            self.clock_correction,
+        );
         let direction = Direction::new(self.settings.azimuth);
         for frame in output.as_chunks_mut::<2>().0 {
             let Some(mut input) = self.resampler.next(&mut self.ring, step) else {
@@ -130,6 +144,7 @@ impl AudioSource {
             if self.settings.muted {
                 continue;
             }
+            input = self.agc.process(input, self.settings.auto_gain);
             if self.settings.spatial {
                 input = self.spatial.process(input, &direction);
             }

@@ -35,7 +35,7 @@ public sealed record MixSettings(float MasterVolume = 0.7f, float BassDb = 0,
 }
 
 public sealed record SourceSettings(float Volume = 1, float Azimuth = 0,
-    bool Spatial = false, bool Muted = false, string? DisplayName = null)
+    bool Spatial = false, bool Muted = false, string? DisplayName = null, bool AutoGain = false)
 {
     [JsonIgnore] public bool IsValid => float.IsFinite(Volume) && Volume is >= 0 and <= 2 &&
         float.IsFinite(Azimuth) && Azimuth is >= 0 and < 360 &&
@@ -43,17 +43,21 @@ public sealed record SourceSettings(float Volume = 1, float Azimuth = 0,
 }
 
 public sealed record SourceSettingsPatch(float? Volume = null, float? Azimuth = null,
-    bool? Spatial = null, bool? Muted = null, string? DisplayName = null, bool ResetName = false)
+    bool? Spatial = null, bool? Muted = null, string? DisplayName = null, bool ResetName = false, bool? AutoGain = null)
 {
     public SourceSettings Apply(SourceSettings current) => new(Volume ?? current.Volume, Azimuth ?? current.Azimuth,
-        Spatial ?? current.Spatial, Muted ?? current.Muted, ResetName ? null : DisplayName ?? current.DisplayName);
+        Spatial ?? current.Spatial, Muted ?? current.Muted, ResetName ? null : DisplayName ?? current.DisplayName, AutoGain ?? current.AutoGain);
 }
+
+public sealed record ProcessingSettings(bool LimiterEnabled = true, bool ClockCorrection = true,
+    float PeakCeiling = .98f, float TargetDbfs = -18, float MaxGainDb = 12,
+    float AttackMs = 10, float ReleaseMs = 500, float GateDbfs = -60);
 
 public sealed record SourceState(Guid Id, string Name, AudioFormat Format,
     SourceSettings Settings, double BufferedMs, long DroppedFrames, long Underruns,
     SourceDiagnostics? Diagnostics = null);
 public sealed record MixerState(MixSettings Settings, SourceState[] Sources, long ClippedSamples,
-    RenderDiagnostics? Diagnostics = null);
+    RenderDiagnostics? Diagnostics = null, ProcessingSettings? Processing = null);
 
 public sealed record SourceDiagnostics(long ReceivedPackets, double LastPacketAudioMs,
     double? LastReceiveIntervalMs, double MaxReceiveIntervalMs, double MaxReceiveExcessMs,

@@ -1,6 +1,6 @@
 # 릴리스와 서명 키
 
-개발 빌드: `scripts/build.ps1`. 릴리스 패키지: `scripts/release.ps1` (Windows PowerShell 7, .NET 10 SDK, JDK/Android SDK 필요).
+개발 빌드: `scripts/build.ps1`. 릴리스 패키지: `scripts/release.ps1` (PowerShell 7, .NET 10 SDK, Rust 1.99.1·C++ 도구·Windows SDK, Python, JDK/Android SDK 필요). Rust 서버가 먼저 빌드되며 WPF 배포 폴더와 단일 EXE 안에 포함됩니다.
 
 ## Android 서명
 
@@ -29,10 +29,10 @@ Windows는 항상 **단일 EXE**를 배포합니다. `package-windows.ps1`은 �
 릴리스 APK와 Windows EXE, 체크섬을 생성·검증하고 해당 소스를 커밋·푸시한 뒤:
 
 ```powershell
-python scripts/publish-release.py --version 0.4.1 --notes docs/releases/v0.4.1.md --commit <커밋SHA>
+python scripts/publish-release.py --version 1.0.0 --notes docs/releases/v1.0.0.md --commit <커밋SHA>
 ```
 
-이 스크립트는 GitHub Releases API를 사용합니다. GitHub 커넥터에는 릴리스 생성/파일 업로드 기능이 없어 이 경로를 사용합니다. 인증 정보는 환경 변수 `GH_TOKEN`/`GITHUB_TOKEN` 또는 Git Credential Manager에서 메모리로 읽고 저장·출력하지 않습니다. 초안을 생성하고 자산 업로드·크기·digest 검증이 성공한 경우에만 시험 릴리스를 공개합니다. 같은 버전이 이미 있으면 실패하며 기존 배포를 덮어쓰지 않습니다.
+이 스크립트는 GitHub Releases API를 사용합니다. GitHub 커넥터에는 릴리스 생성/파일 업로드 기능이 없어 이 경로를 사용합니다. 인증 정보는 환경 변수 `GH_TOKEN`/`GITHUB_TOKEN` 또는 Git Credential Manager에서 메모리로 읽고 저장·출력하지 않습니다. 초안을 생성하고 자산 업로드·크기·digest 검증이 성공한 경우에만 릴리스를 공개합니다. 시험 배포에는 `--prerelease`를 지정합니다. 같은 버전이 이미 있으면 실패하며 기존 배포를 덮어쓰지 않습니다.
 
 Windows 바이너리 게시자 인증서 서명, Google Play 및 Microsoft Store 게시는 이 파이프라인에 포함하지 않습니다.
 

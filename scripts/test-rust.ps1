@@ -13,6 +13,8 @@ try {
     Set-Location (Join-Path $root 'rust')
     cargo fetch --locked
     if ($LASTEXITCODE -ne 0) { throw 'cargo dependency fetch failed' }
+    python ../scripts/rust-notices.py --check
+    if ($LASTEXITCODE -ne 0) { throw 'Rust dependency license verification failed' }
     cargo fmt --all
     if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed' }
     cargo clippy --workspace --all-targets --locked --offline -- -D warnings

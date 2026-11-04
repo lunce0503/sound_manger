@@ -1,6 +1,6 @@
 //! Wire contracts retain the v1 Android, Windows and browser clients' camelCase JSON.
 use serde::{Deserialize, Serialize};
-use sound_core::{AudioError, AudioFormat, MixSettings, SourceSettings};
+use sound_core::{AudioError, AudioFormat, MixSettings, ProcessingSettings, SourceSettings};
 use uuid::Uuid;
 
 pub const MAX_HELLO: usize = 4096;
@@ -38,6 +38,7 @@ pub struct SourceSettingsPatch {
     pub muted: Option<bool>,
     pub display_name: Option<String>,
     pub reset_name: bool,
+    pub auto_gain: Option<bool>,
 }
 impl SourceSettingsPatch {
     pub fn apply(&self, current: &SourceSettings) -> Result<SourceSettings, AudioError> {
@@ -49,6 +50,7 @@ impl SourceSettingsPatch {
             azimuth: self.azimuth.unwrap_or(current.azimuth),
             spatial: self.spatial.unwrap_or(current.spatial),
             muted: self.muted.unwrap_or(current.muted),
+            auto_gain: self.auto_gain.unwrap_or(current.auto_gain),
             display_name: if self.reset_name {
                 None
             } else {
@@ -117,4 +119,5 @@ pub struct MixerState {
     pub output_rms: f64,
     #[serde(default)]
     pub output_peak: f32,
+    pub processing: ProcessingSettings,
 }

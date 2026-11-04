@@ -23,9 +23,17 @@ public partial class SourceListView : UserControl
         public SourceSettings Settings { get; private set; } = new();
         public SourceState? State { get; private set; }
         public bool Muted => Settings.Muted;
+        public bool IsEnabled => !Pending;
+        public bool Pending { get; private set; }
+        public void SetPending(bool value) { Pending=value; PropertyChanged?.Invoke(this,new(nameof(IsEnabled))); }
+        public void Apply(SourceSettingsPatch patch)
+        {
+            Settings=patch.Apply(Settings); PropertyChanged?.Invoke(this,new(nameof(Muted)));
+        }
         public event PropertyChangedEventHandler? PropertyChanged;
         public void Set(SourceState state)
         {
+            if(Pending){State=state;return;}
             State = state; Name = state.Name; Settings = state.Settings;
             PropertyChanged?.Invoke(this, new(nameof(Name)));
             PropertyChanged?.Invoke(this, new(nameof(Muted)));
@@ -66,8 +74,14 @@ public partial class SourceListView : UserControl
 
     private async Task<bool> Submit(Row row, SourceSettingsPatch changes)
     {
-        var result = await update(row.Id, changes);
-        if (result == SourceUpdateResult.Updated) return true;
+        if(row.Pending)return false;
+        row.SetPending(true);
+        SourceUpdateResult result;
+        try { result=await update(row.Id,changes); }
+        finally {row.SetPending(false);}
+        if (result == SourceUpdateResult.Updated) { refreshing=true;try{row.Apply(changes);}finally{refreshing=false;}return true; }
+        // Restore the toggle immediately when a write fails.
+        refreshing=true;try{if(row.State is {} state)row.Set(state);}finally{refreshing=false;}
         MessageBox.Show(result switch
         {
             SourceUpdateResult.NotFound => "연결이 끊겼습니다. 다시 연결한 뒤 조절하세요.",
@@ -124,7 +138,10 @@ public partial class SourceListView : UserControl
         var slider = new Slider { Minimum = 0, Maximum = 200, Value = row.Settings.Volume * 100, TickFrequency = 1, IsSnapToTickEnabled = true, Margin = new(0, 12, 0, 0) };
         slider.ValueChanged += (_, _) => value.Text = $"{slider.Value:F0}%"; value.Text = $"{slider.Value:F0}%";
         body.Children.Add(value); body.Children.Add(slider);
-        Buttons(window, body, () => Submit(row, new(Volume: (float)slider.Value / 100)));
+        var automatic=new CheckBox {Content="입력 음량 자동 보정",IsChecked=row.Settings.AutoGain,Foreground=Brushes.White,Margin=new(0,16,0,0)};
+        body.Children.Add(automatic);
+        body.Children.Add(new TextBlock {Text="작거나 큰 입력을 기준 레벨로 보정한 뒤 위 음량 비율을 적용합니다.",TextWrapping=TextWrapping.Wrap,Margin=new(0,8,0,0)});
+        Buttons(window, body, () => Submit(row, new(Volume: (float)slider.Value / 100,AutoGain:automatic.IsChecked==row.Settings.AutoGain?null:automatic.IsChecked==true)));
         window.ShowDialog();
     }
 

@@ -37,6 +37,7 @@ internal sealed class RustBackend : IAsyncDisposable
         var start=new ProcessStartInfo(executable){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=Path.GetDirectoryName(executable)!,
             RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardInputEncoding=new UTF8Encoding(false),StandardOutputEncoding=Encoding.UTF8};
         process=Process.Start(start)??throw new IOException("Rust 서버를 시작하지 못했습니다.");
+        BackendLog.Write("started",process.Id);
         reader=ReadMessagesAsync();errors=DrainErrorsAsync();watcher=WatchAsync();
         string configuration=JsonSerializer.Serialize(new{key,port,host,outputDeviceId,settingsPath,mix,headless},Json);
         await process.StandardInput.WriteLineAsync(configuration.AsMemory(),cancellation).ConfigureAwait(false);
@@ -56,18 +57,30 @@ internal sealed class RustBackend : IAsyncDisposable
                 using var document=JsonDocument.Parse(line);var value=document.RootElement;
                 switch(value.GetProperty("event").GetString())
                 {
-                    case "ready":ready.TrySetResult(value.GetProperty("port").GetInt32());break;
+                    case "ready":BackendLog.Write("ready",process!.Id);ready.TrySetResult(value.GetProperty("port").GetInt32());break;
                     case "reply":
                         if(value.TryGetProperty("requestId",out var id)&&id.TryGetInt64(out long number)&&replies.TryRemove(number,out var completion))completion.TrySetResult(value.Clone());
                         break;
-                    case "error":ready.TrySetException(new IOException("Rust 오디오 서버를 시작하지 못했습니다. 출력 장치와 저장된 설정을 확인하세요."));break;
+                    case "error":BackendLog.Write("native-error",process!.Id);ready.TrySetException(new IOException("Rust 오디오 서버를 시작하지 못했습니다. 출력 장치와 저장된 설정을 확인하세요."));break;
                 }
             }
         }
-        catch(Exception error) when(error is IOException or OperationCanceledException or JsonException or InvalidOperationException)
-        {if(!stopping)ready.TrySetException(new IOException("Rust 서버 응답을 읽지 못했습니다."));}
+        catch(Exception error) when(error is IOException or OperationCanceledException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
+        {
+            if(!stopping)
+            {
+                ready.TrySetException(new IOException("Rust 서버 응답을 읽지 못했습니다."));
+                // A broken private control channel must also trigger the process supervisor.
+                try{if(process is {HasExited:false})process.Kill(entireProcessTree:true);}catch(InvalidOperationException){}
+            }
+        }
         finally
         {
+            if(!stopping)
+            {
+                BackendLog.Write("control-channel-ended",process?.Id);
+                try{if(process is {HasExited:false})process.Kill(entireProcessTree:true);}catch(InvalidOperationException){}
+            }
             ready.TrySetException(new IOException("Rust 서버가 종료되었습니다."));
             foreach(var pair in replies)if(replies.TryRemove(pair.Key,out var completion))completion.TrySetException(new IOException("Rust 서버가 종료되었습니다."));
         }
@@ -81,6 +94,7 @@ internal sealed class RustBackend : IAsyncDisposable
     private async Task WatchAsync()
     {
         await process!.WaitForExitAsync().ConfigureAwait(false);
+        BackendLog.Write(stopping?"stopped":"unexpected-exit",process.Id,process.ExitCode);
         if(!stopping)Failed?.Invoke();
     }
     private async Task<JsonElement> RequestAsync(string op,bool requireIdle=true,CancellationToken cancellation=default)
@@ -111,6 +125,11 @@ internal sealed class RustBackend : IAsyncDisposable
     public async Task SetMixAsync(MixSettings settings,CancellationToken cancellation=default)
     {
         using var response=await http.PutAsJsonAsync("/v1/mix",settings,Json,cancellation).ConfigureAwait(false);response.EnsureSuccessStatusCode();
+    }
+    public async Task SetProcessingAsync(ProcessingSettings settings,CancellationToken cancellation=default)
+    {
+        using var response=await http.PutAsJsonAsync("/v1/processing",settings,Json,cancellation).ConfigureAwait(false);response.EnsureSuccessStatusCode();
+        await RefreshAsync(cancellation).ConfigureAwait(false);
     }
     public async Task<SourceUpdateResult> UpdateSourceAsync(Guid id,SourceSettingsPatch patch)
     {

@@ -1,5 +1,5 @@
 use crossbeam_queue::ArrayQueue;
-use sound_core::{AudioFormat, MixSettings, Mixer, SourceId, SourceSettings};
+use sound_core::{AudioFormat, MixSettings, Mixer, ProcessingSettings, SourceId, SourceSettings};
 use sound_protocol::{MixerState, RenderDiagnostics, SourceDiagnostics, SourceState};
 use std::{
     sync::{
@@ -50,6 +50,10 @@ struct Slot {
 }
 type Reply<T> = oneshot::Sender<Result<T, String>>;
 enum Command {
+    Processing {
+        settings: ProcessingSettings,
+        reply: Reply<()>,
+    },
     Add {
         id: Uuid,
         name: String,
@@ -105,6 +109,7 @@ impl Engine {
             .name("sound-manager-dsp".into())
             .spawn(move || {
                 let mut mixer = Mixer::default();
+                let _ = mixer.set_processing(ProcessingSettings::recommended());
                 let mut slots: Vec<Slot> = Vec::with_capacity(16);
                 let mut timing = RenderDiagnostics::default();
                 let mut last_render: Option<Instant> = None;
@@ -116,6 +121,11 @@ impl Engine {
                     // Control allocation, snapshots and packet destruction happen outside Mixer::render.
                     for command in receiver.try_iter().take(32) {
                         match command {
+                            Command::Processing { settings, reply } => {
+                                let _ = reply.send(
+                                    mixer.set_processing(settings).map_err(|e| e.to_string()),
+                                );
+                            }
                             Command::Add {
                                 id,
                                 name,
@@ -212,6 +222,7 @@ impl Engine {
                                     diagnostics,
                                     output_rms: rms,
                                     output_peak: peak,
+                                    processing: mixer.processing(),
                                 }));
                             }
                         }
@@ -330,5 +341,9 @@ impl Engine {
     }
     pub async fn snapshot(&self) -> Result<MixerState, String> {
         self.request(|reply| Command::Snapshot { reply }).await
+    }
+    pub async fn set_processing(&self, settings: ProcessingSettings) -> Result<(), String> {
+        self.request(|reply| Command::Processing { settings, reply })
+            .await
     }
 }

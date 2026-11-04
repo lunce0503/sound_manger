@@ -10,11 +10,21 @@ impl Resampler {
         self.phase = 0.0;
     }
 
-    pub fn step(sample_rate: u32, buffered: usize, reserve: usize) -> f64 {
+    pub fn step(
+        sample_rate: u32,
+        buffered: usize,
+        reserve: usize,
+        correction_enabled: bool,
+    ) -> f64 {
         // v1 C# divides two integers before converting to double. Preserve that
         // truncation for parity; enabling fractional drift is a Phase 4 change.
-        let correction = (((buffered as i64 - reserve as i64) / (sample_rate as i64 * 20)) as f64)
-            .clamp(-0.002, 0.002);
+        let error = buffered as f64 - reserve as f64;
+        let correction = if correction_enabled {
+            (error / (f64::from(sample_rate) * 20.0)).clamp(-0.002, 0.002)
+        } else {
+            (((buffered as i64 - reserve as i64) / (sample_rate as i64 * 20)) as f64)
+                .clamp(-0.002, 0.002)
+        };
         sample_rate as f64 / SAMPLE_RATE as f64 * (1.0 + correction)
     }
 

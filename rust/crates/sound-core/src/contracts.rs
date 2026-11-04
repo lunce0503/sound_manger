@@ -123,6 +123,7 @@ pub struct SourceSettings {
     pub spatial: bool,
     pub muted: bool,
     pub display_name: Option<String>,
+    pub auto_gain: bool,
 }
 
 impl Default for SourceSettings {
@@ -133,6 +134,7 @@ impl Default for SourceSettings {
             spatial: false,
             muted: false,
             display_name: None,
+            auto_gain: false,
         }
     }
 }

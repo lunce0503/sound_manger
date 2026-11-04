@@ -15,8 +15,8 @@ use axum::{
 };
 use engine::{Engine, Ingress};
 use serde::de::DeserializeOwned;
-use settings::SettingsStore;
-use sound_core::{MixSettings, SourceSettings};
+use settings::{ProcessingStore, SettingsStore};
+use sound_core::{MixSettings, ProcessingSettings, SourceSettings};
 use sound_protocol::{AudioHello, KEEPALIVE, MAX_HELLO, MAX_MESSAGE, SourceSettingsPatch};
 use std::{
     collections::HashMap,
@@ -46,6 +46,7 @@ pub struct Hub {
     key: Arc<str>,
     registry: Arc<Mutex<Registry>>,
     saved: Arc<StdMutex<SettingsStore>>,
+    processing: Arc<StdMutex<ProcessingStore>>,
     stop: CancellationToken,
 }
 pub struct RunningServer {
@@ -70,17 +71,28 @@ impl RunningServer {
                 "Connection key must contain 24-512 bytes",
             ));
         }
+        let processing = ProcessingStore::load(
+            settings
+                .as_ref()
+                .map(|path| path.with_file_name("processing-settings.json")),
+        )?;
+        engine
+            .set_processing(processing.get())
+            .await
+            .map_err(std::io::Error::other)?;
         let saved = SettingsStore::load(settings)?;
         let hub = Hub {
             engine,
             key: key.into(),
             registry: Arc::new(Mutex::new(Registry::default())),
             saved: Arc::new(StdMutex::new(saved)),
+            processing: Arc::new(StdMutex::new(processing)),
             stop: CancellationToken::new(),
         };
         let router = Router::new()
             .route("/v1/state", get(state))
             .route("/v1/mix", put(set_mix))
+            .route("/v1/processing", get(get_processing).put(set_processing))
             .route(
                 "/v1/sources/{id}",
                 put(put_source).merge(patch(patch_source)),
@@ -275,6 +287,37 @@ async fn set_mix(State(hub): State<Hub>, body: axum::body::Bytes) -> Response {
     }
     state(State(hub)).await
 }
+async fn get_processing(State(hub): State<Hub>) -> Response {
+    match hub.engine.snapshot().await {
+        Ok(state) => Json(state.processing).into_response(),
+        Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
+}
+async fn set_processing(State(hub): State<Hub>, body: axum::body::Bytes) -> Response {
+    let settings: ProcessingSettings = match decode(&body) {
+        Ok(settings) => settings,
+        Err(status) => return status.into_response(),
+    };
+    if settings.validate().is_err() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let _guard = hub.registry.lock().await;
+    let saved = hub.processing.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        saved
+            .lock()
+            .map_err(|_| std::io::Error::other("Settings lock failed"))?
+            .save(settings)
+    })
+    .await;
+    if !matches!(result, Ok(Ok(()))) {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    if hub.engine.set_processing(settings).await.is_err() {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    state(State(hub.clone())).await
+}
 async fn patch_source(
     State(hub): State<Hub>,
     Path(id): Path<String>,
@@ -312,6 +355,9 @@ async fn put_source(
             muted: Some(next.muted),
             display_name: next.display_name,
             reset_name: false,
+            auto_gain: serde_json::from_slice::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|value| value.get("autoGain").and_then(|v| v.as_bool())),
         },
     )
     .await

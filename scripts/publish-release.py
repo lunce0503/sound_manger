@@ -16,6 +16,7 @@ def main():
     parser.add_argument("--version", required=True)
     parser.add_argument("--notes", required=True, type=Path)
     parser.add_argument("--commit", required=True)
+    parser.add_argument("--prerelease", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     remote = subprocess.check_output(["git", "remote", "get-url", "origin"], cwd=root, text=True).strip()
@@ -26,7 +27,7 @@ def main():
         raise RuntimeError("Invalid version")
     package_root = root / "artifacts" / "release" / f"v{version}"
     files = [package_root / f"SoundManager-{version}-windows-x64.exe", package_root / f"SoundManager-{version}-android.apk", package_root / "SHA256SUMS.txt", package_root / "THIRD-PARTY-NOTICES.md", package_root / "LICENSE", package_root / "README.md"]
-    files += [package_root / "update.json", package_root / "update.json.sig"]
+    files += [package_root / "update.json", package_root / "update.json.sig", package_root / "RUST-THIRD-PARTY-NOTICES.txt"]
     if not all(path.is_file() for path in files):
         raise RuntimeError("Release packages are missing")
     expected = dict(line.split("  ", 1)[::-1] for line in (package_root / "SHA256SUMS.txt").read_text(encoding="utf-8-sig").splitlines())
@@ -56,7 +57,7 @@ def main():
     # A unique draft is reviewable/recoverable if upload or verification fails.
     release = api("POST", endpoint + "/releases", {
         "tag_name": tag, "target_commitish": args.commit, "name": "Sound Manager " + tag,
-        "body": args.notes.read_text(encoding="utf-8"), "draft": True, "prerelease": True,
+        "body": args.notes.read_text(encoding="utf-8"), "draft": True, "prerelease": args.prerelease,
     })
     for path in files:
         upload_url = release["upload_url"].split("{")[0] + "?name=" + urllib.parse.quote(path.name)

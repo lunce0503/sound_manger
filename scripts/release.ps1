@@ -1,4 +1,4 @@
-param([string]$Version = '0.4.1')
+param([string]$Version = '1.0.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected semantic version, for example 0.2.0' }
@@ -55,7 +55,7 @@ try {
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
     & "$env:JAVA_HOME\bin\java.exe" "$PSScriptRoot\SignUpdate.java" $manifestPath 'src/SoundManager.Updates/UpdateManifest.cs' 'android/app/src/main/java/com/lunce/soundmanager/AppUpdates.java'
     if ($LASTEXITCODE -ne 0) { throw 'Update manifest signing failed' }
-    Copy-Item -LiteralPath LICENSE, README.md, THIRD-PARTY-NOTICES.md -Destination $releaseRoot
+    Copy-Item -LiteralPath LICENSE, README.md, THIRD-PARTY-NOTICES.md, RUST-THIRD-PARTY-NOTICES.txt -Destination $releaseRoot
     $sums = Get-ChildItem -LiteralPath $releaseRoot -File | Where-Object Name -ne 'SHA256SUMS.txt' | ForEach-Object {
         "{0}  {1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
     }

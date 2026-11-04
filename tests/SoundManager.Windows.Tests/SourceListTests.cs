@@ -10,6 +10,24 @@ namespace SoundManager.Windows.Tests;
 
 public sealed class SourceListTests
 {
+    [Fact]
+    public Task PendingMuteCannotBeOverwrittenByAnOlderPoll() => BackgroundLifetimeTests.OnDesktop(async () =>
+    {
+        var mixer=new Mixer();mixer.AddSource("pending",new(48000,2,"pcm16"));
+        var completed=new TaskCompletionSource<SourceUpdateResult>();int calls=0;
+        var view=new SourceListView((_,_)=>{calls++;return completed.Task;});
+        var window=new Window{Content=view,Width=680,Height=240,ShowInTaskbar=false,Left=-10000,Top=-10000};
+        try
+        {
+            view.Refresh(mixer.Snapshot().Sources);window.Show();window.UpdateLayout();
+            var toggle=Assert.Single(Descendants<CheckBox>(view));toggle.IsChecked=true;
+            Assert.Equal(1,calls);Assert.False(toggle.IsEnabled);
+            view.Refresh(mixer.Snapshot().Sources);Assert.True(toggle.IsChecked);
+            completed.SetResult(SourceUpdateResult.Updated);await Dispatcher.Yield();
+            Assert.True(toggle.IsEnabled);Assert.True(toggle.IsChecked);Assert.Equal(1,calls);
+        }
+        finally{completed.TrySetResult(SourceUpdateResult.SaveFailed);window.Close();}
+    });
     private static IEnumerable<T> Descendants<T>(DependencyObject parent) where T : DependencyObject
     {
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)

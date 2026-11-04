@@ -14,8 +14,9 @@ public sealed partial class ExternalTunnel : IAsyncDisposable
     private readonly TaskCompletionSource<string> endpoint = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public event Action? Stopped;
 
-    public async Task<string> StartAsync(string executable, CancellationToken cancellation = default)
+    public async Task<string> StartAsync(string executable, CancellationToken cancellation = default, int localPort = 17842)
     {
+        if(localPort is < 1 or > 65535)throw new ArgumentOutOfRangeException(nameof(localPort));
         if (process is not null) throw new InvalidOperationException("외부 연결이 이미 실행 중입니다.");
         if (!File.Exists(executable)) throw new FileNotFoundException("배포 폴더의 cloudflared.exe가 필요합니다.", executable);
         await using (var stream = File.OpenRead(executable))
@@ -30,7 +31,7 @@ public sealed partial class ExternalTunnel : IAsyncDisposable
             RedirectStandardOutput = true, RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(executable)!
         };
-        foreach (var arg in new[] { "tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://127.0.0.1:17842" })
+        foreach (var arg in new[] { "tunnel", "--no-autoupdate", "--protocol", "http2", "--url", $"http://127.0.0.1:{localPort}" })
             start.ArgumentList.Add(arg);
         process = new Process { StartInfo = start, EnableRaisingEvents = true };
         process.OutputDataReceived += (_, args) => ReadLine(args.Data);

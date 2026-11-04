@@ -12,6 +12,7 @@ if (!(Test-Path -LiteralPath $executable) -or (Get-FileHash -LiteralPath $execut
 }
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/cloudflare/cloudflared/$version/LICENSE" -OutFile (Join-Path $OutputDirectory 'cloudflared-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'THIRD-PARTY-NOTICES.md') -Destination $OutputDirectory
+Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'RUST-THIRD-PARTY-NOTICES.txt') -Destination $OutputDirectory
 Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'LICENSE') -Destination (Join-Path $OutputDirectory 'SoundManager-LICENSE.txt')
 Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'licenses') -Destination $OutputDirectory -Recurse -Force
 Write-Output "cloudflared $version verified and bundled."

@@ -4,6 +4,8 @@ Sound Manager is distributed under the MIT license in LICENSE.
 
 The Windows package includes:
 
+- **Rust audio server** — transitive crate versions, upstream license texts and copyright notices are bundled in `RUST-THIRD-PARTY-NOTICES.txt`.
+
 - **cloudflared 2026.10.3** — Cloudflare, Inc., Apache License 2.0. The unmodified Windows amd64 executable is included as `cloudflared.exe`. Its license is `cloudflared-LICENSE.txt`. Source and upstream notices: https://github.com/cloudflare/cloudflared/tree/2026.10.3
 - **QRCoder 1.7.0** — QRCoder contributors, MIT License. https://github.com/codebude/QRCoder
 - **NAudio 2.2.1** — Mark Heath and contributors, MIT License. https://github.com/naudio/NAudio

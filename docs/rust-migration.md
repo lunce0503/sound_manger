@@ -1,114 +1,118 @@
-# Sound Manager Rust 마이그레이션 진행 기록
+# Sound Manager Rust 마이그레이션
 
-기준 계획: Rust 마이그레이션 계획서 v1.0. 대상 저장소:
-`lunce0503/sound_manger`. 기존 C# 서버를 유지하면서 DSP → 네트워크 →
-Windows 연동 → 음질 개선 → 배포 순서로 진행합니다.
+기준: Rust 마이그레이션 계획서 v1.0. 작업 브랜치: `feature/rust-audio-server`.
+Windows의 서버 실행 경로를 Rust로 전환했습니다. WPF 화면, Windows loopback 송신,
+Android Java, Chrome·Edge 확장과 v1 PCM 프로토콜은 유지합니다.
 
-## 1. 이번 변경 범위
+## 구현과 자동 검증
 
-2026-11-05 현재 Phase 0~3의 초기 구현과 자동 검증을 진행했습니다.
-작업 브랜치는 `feature/rust-audio-server`입니다. Windows 앱 소스의 서버 경로는
-Rust sidecar로 전환했으며, 기존 C# 서버·DSP는 기준선/비교 테스트용으로 보존합니다.
-공개 릴리스 v0.4.1은 기존 C# 기반입니다. 1.0.0 릴리스는 아직 게시하지 않았습니다.
-작업 시작 당시의 지연 측정·UI 관련 미커밋 변경을 포함해 보존했습니다.
-
-| 단계 | 현재 상태 | 남은 완료 조건 |
+| 단계 | 구현 | 검증 |
 | --- | --- | --- |
-| 0 기준선 | C# 테스트 71개·Windows 기존 20개, 결정적 기준 출력 40개 통과; 설정 백업·브랜치 확보 | 새 변경에 따른 회귀 검증 유지 |
-| 1 DSP | Rust fmt/clippy/test·C# 출력 40개 비교 통과 | 품질 개선을 별도 옵션으로 검증 |
-| 2 서버 | 인증·REST·WS·PascalCase 설정 저장·세션 교체·진단 구현; 서버 테스트 8개 통과 | 부하·시간 제한·실제 클라이언트 비교 보강 |
-| 3 Windows 연동 | WASAPI 출력·WPF sidecar·프로세스 종료 감지·아이콘·바로가기 구현; Windows 총 24개 테스트 통과 | 프로세스 재시작·자동 시작·단일 EXE 패키징 최종 검증 |
-| 4 품질 | 미착수 | AGC·look-ahead limiter·실효성 있는 클록 보정 |
-| 5 배포 | Rust 빌드/검증 CI·Rust 대상 Chrome 실제 탭 테스트 구현 | 10개 소스·30분·성능·터널·롤백·1.0.0 서명/게시 |
+| 0 기준선 | 설정 백업, 전용 브랜치, 결정적 C# 합성 음원 fixture 40개 | C# 코어·서버 71개 회귀 테스트 |
+| 1 DSP | 입력 형식·링 버퍼·리샘플링·방향·EQ·48 kHz stereo 믹싱 | 기존 처리 모드에서 fixture 40개 PCM·버퍼·카운터 일치 |
+| 2 네트워크 | Tokio/Axum 인증 REST·WebSocket, 세션 교체, 기기 설정의 원자적 저장 | 인증·브라우저 Origin·keepalive·크기/시간 제한·16소스 상한·업데이트 gate·재접속·저장 실패 등 서버 테스트 12개 |
+| 3 Windows | Rust WASAPI sidecar, private pipe 제어, 종료 감지·재시작, 트레이·자동 시작·업데이트·아이콘 | Windows 테스트 26개; 실제 저장된 출력 장치의 음량 0 초기화·종료 확인 |
+| 4 품질 | 입력별 AGC, 5 ms look-ahead 리미터, fractional 클록 보정과 개별 해제 옵션 | 입력 레벨·stereo 비율·무음 gate·피크 상한·연속성·±1500 ppm 가상 90초 시험 |
+| 5 클라이언트·배포 | 실 Chrome 탭 캡처, Android API/OkHttp 합성 PCM, 외부 HTTPS/WSS, CI·서명 배포 | 아래 진행/완료 기록과 릴리스 검증 결과 참고 |
 
-사용자는 Android 실기기 검증을 추후 진행하고 자동 검증 후 릴리스하도록
-명시했습니다. 해당 실기기 결과를 자동 테스트로 대체해 통과했다고 기록하지 않습니다.
-실제 PC의 저장된 Galaxy Buds2 출력 장치에서 Rust WASAPI 초기화와 종료를
-전체 음량 0으로 확인했습니다. 실제 청취 음질 검증을 의미하지 않습니다.
+Android 자동 테스트는 기존 페어링 암호화·자동 인증·UI·업데이트 테스트에
+Rust API/OkHttp 연결·PCM 전송·제어·재접속 테스트를 추가했습니다.
+사용자는 **Android 실기기 검증을 추후 진행하고 자동 검증 후 릴리스**하도록
+명시했습니다. 자동 테스트를 실제 AudioRecord 캡처나 Bluetooth 청취 시험으로
+간주하지 않습니다. 실제 저장된 Galaxy Buds2 장치의 Rust WASAPI 초기화는
+전체 음량 0으로 확인했으며 청취 음질 평가는 아닙니다.
 
-현재 Rust workspace는 `sound-core`, `sound-protocol`, `sound-server`,
-`sound-output`, `sound-app`을 포함합니다. Rust 도구 설치 및 SDK 복구 뒤
-2026-11-05 로컬 빌드가 가능해졌습니다. 아래 2026-11-03 제한 기록은 당시 기록입니다.
+실 Chrome 테스트는 독립된 2개 탭의 원본 PCM 전송, 팝업 닫기 후 전송 유지,
+서버 음량·음소거·이름 변경, 확장 idle 업데이트와 페어링·프로필 복원을 확인했습니다.
+실 Cloudflare 터널은 HTTPS 200, 무인증 401, 일반/브라우저 WSS 경로,
+Rust DSP의 비영 출력과 음량·EQ 제어를 확인했습니다. 합성 음원만 사용했습니다.
 
-## 2. 기존 코드와 대응 관계
+## 런타임 구조
 
-| C# 기준 구현 | Rust 대응 | 보존하는 동작 |
-| --- | --- | --- |
-| `src/SoundManager.Core/Contracts.cs` | `sound-core/src/contracts.rs` | PCM16/float32 LE, 8~192 kHz, 1~2채널, 볼륨·EQ·방향 검증 |
-| `AudioSource.cs` | `source.rs`, `ring_buffer.rs`, `resampler.rs`, `spatial.rs` | 모노 복제, 비정상 float 정제, 500 ms 버퍼 상한, 선형 보간, 공간 효과, 음소거 중 소비 |
-| `Mixer.cs` | `mixer.rs` | 16소스, float stereo 합산, EQ → master volume → hard clip |
-| `Biquad.cs` | `biquad.rs` | 120 Hz low shelf, 4 kHz high shelf, 2.5 kHz peaking |
-| `RenderTiming.cs` 및 수신 진단 | Phase 2에서 연결 예정 | 단조 시계 기반 수신·렌더 지표; 현재 Rust는 프레임·패킷·trim 카운터만 제공 |
-| `src/SoundManager.Server/HubServer.cs` | Phase 2 | 인증·엔드포인트·세션 생명주기 |
-| `SourceSettingsStore.cs`, `WindowsConnectionStore.cs` | Phase 2/3 | 기기 설정·저장된 페어링 보존 |
-| `src/SoundManager.Windows` | Phase 3 | WPF 유지, WASAPI 출력·송신 캡처·트레이·자동 시작·업데이트 |
+Rust workspace는 `sound-core`, `sound-protocol`, `sound-server`, `sound-output`,
+`sound-app`으로 구성합니다. 오디오 상태는 DSP 전용 스레드가 단독 소유합니다.
+네트워크는 소스별 제한된 큐로 PCM을 넘기고, DSP 결과는 고정 크기 블록 큐를 거쳐
+WASAPI 전용 COM 스레드로 전달됩니다. 장치 callback에는 할당·잠금·네트워크·파일
+작업이 없습니다. 제어 명령·상태 조회와 디스크 저장은 callback 밖에서 수행합니다.
 
-입력 버퍼는 C#처럼 입력 샘플레이트를 유지하며, 믹싱 단계에서 48 kHz
-Float32 Stereo로 변환합니다. Rust 코어의 핸들은 내부 식별자입니다.
-프로토콜 `sourceId`/`deviceId` GUID와 매핑할 네트워크 계층은 별도로 필요합니다.
+WPF는 Rust 서버만 제어하며 C# 믹서와 WASAPI 출력기를 동시에 실행하지 않습니다.
+원래 C# 코어·서버는 기준선·비교 테스트 도구와 이전 배포의 복구 경로를 위해 남깁니다.
+개발용 native 서버 기본 포트는 17843, WPF가 시작하는 서버는 기존 17842입니다.
+서버 키는 명령줄에 넣지 않고 부모·자식 사이의 private stdin pipe로 전달합니다.
+부모 pipe가 닫히면 서버도 종료하며, 예기치 않은 자식 종료는 저장된 장치로 재시도합니다.
+구조화된 생명주기 로그는 `%LOCALAPPDATA%/SoundManager/logs/backend.jsonl`에
+크기를 제한해 저장하고 키·주소·원본 자식 출력을 기록하지 않습니다.
 
-오디오 상태는 단일 소유자가 관리합니다. `render`에는 동적 할당·잠금·I/O를
-넣지 않았습니다. 향후 수신 스레드와 출력 스레드를 연결할 제한된 큐,
-제어 명령 전달, 상태 스냅샷 전달 및 자원 해제 정책은 별도 검증 대상입니다.
-현재 버퍼를 SPSC 동기화 구현으로 간주하면 안 됩니다.
+기존 `source-settings.json`의 PascalCase v1 구조를 유지하고 AutoGain 필드만
+선택적으로 추가합니다. `deviceId` 설정은 첫 PCM 처리 전에 적용하고 같은 기기의
+재접속은 이전 세션을 교체합니다. 저장 실패는 503을 반환하고 현재 설정을 유지합니다.
+출력 보호·AGC 기준은 인접한 `processing-settings.json`에 원자적으로 저장합니다.
 
-## 3. 호환성 기준과 발견 사항
+## 품질 설정과 호환성
 
-`tools/SoundManager.Golden`은 현재 C# 믹서에 합성 PCM과 설정 변경을 입력해
-40개 `.smg` 파일을 생성합니다. 같은 시나리오를 두 번 생성해 결정성을
-확인하며, 기준 소스의 SHA-256도 기록합니다. 개인 녹음·주소·연결 키·설정
-파일은 포함하지 않습니다.
+입력 형식은 PCM16/float32 LE, 8–192 kHz, 모노·스테레오입니다. 시작 버퍼는
+40 ms, 목표는 60 ms이며 최종 출력은 48 kHz float stereo입니다.
+기본값은 클록 보정과 리미터 활성화, 입력별 AGC 비활성화입니다.
 
-Rust 테스트는 동일 입력을 재생하여 샘플 절대 오차 ≤ 0.00002,
-버퍼 시간 오차 ≤ 0.000000001 ms, 프레임·패킷·클리핑·언더런·trim 카운터의
-정확한 일치를 요구합니다. 자세한 형식은
-[`rust/tests/compatibility/README.md`](../rust/tests/compatibility/README.md)를 참고하세요.
+AGC 기본 목표는 -18 dBFS RMS, 최대 증폭 12 dB, attack 10 ms, release 500 ms,
+무음 gate -60 dBFS입니다. 소스의 음량 비율은 AGC 이후에 적용됩니다.
+출력 리미터는 양 채널에 같은 gain을 적용하고 기본 sample peak ceiling은 0.98입니다.
+5 ms 지연이 추가됩니다. 이는 디지털 sample peak 제한으로 실제 음압이나 true peak를
+보장하지 않습니다. 실제 60 dB SPL 측정·제한 기능은 포함하지 않습니다.
 
-**클록 드리프트 주의:** 현재 C#의 `(count - reserve) / (format.SampleRate * 20)`은
-정수끼리 나눕니다. 버퍼가 약 500 ms로 제한되므로 해당 보정값은 사실상 0입니다.
-초기 Rust 이식에서는 이 동작도 유지했습니다. Phase 4에서 부동소수점 나눗셈으로
-변경하고, 송수신 클록 편차에 대한 별도 시험과 기준 출력 검토를 수행해야 합니다.
+기존 C#의 클록 보정은 정수 나눗셈 때문에 실질적으로 적용되지 않았습니다.
+호환 모드는 이를 보존하고 새 클록 보정은 부동소수점 계산을 사용합니다.
+`/v1/processing`에서 리미터와 클록 보정을 개별 해제할 수 있습니다.
+입력별 `autoGain`은 기존 source PATCH에 추가했으며 이를 생략한 기존 클라이언트가
+다른 설정을 조절해도 저장된 AGC 값을 지우지 않습니다.
 
-그 외 Phase 2에서 반드시 보존할 계약:
+Golden 비교 허용 오차는 PCM 절대값 0.00002, 버퍼 시간 0.000000001 ms이며
+프레임·패킷·클리핑·언더런·trim 카운터는 정확히 일치해야 합니다.
+C# 계약에 AutoGain/Processing 필드를 추가하면서 manifest의 Contracts.cs 해시만
+갱신했습니다. 기존 40개 binary fixture의 내용과 SHA256은 바뀌지 않았습니다.
 
-- `WS /v1/audio`, `WS /v1/browser-audio`, `GET /v1/state`, `PUT /v1/mix`, `PUT/PATCH /v1/sources/{id}`.
-- 일반 경로의 `X-Sound-Key`와 브라우저 첫 hello의 `key`, 확장 Origin 검증,
-  constant-time 키 비교. Android는 일반 오디오 경로를 사용합니다.
-- hello 최대 4096 bytes, 전체 WebSocket 메시지 최대 65536 bytes,
-  10초 메시지 수신 제한, 정확한 keepalive 메시지, fragment 합치기.
-- `deviceId` 저장 설정을 첫 PCM 처리 전에 복원하고, 재연결 시 이전 세션을
-  교체합니다. 이전 세션 종료가 새 세션을 제거하지 않아야 합니다.
-- 최신 상태 응답의 진단 필드를 포함합니다. 업데이트 중 신규 접속 제한,
-  저장 실패 시 기존 설정 유지 및 HTTP 상태 코드도 비교합니다.
+## 재현
 
-## 4. 실행 기록 및 제한
-
-2026-11-03 작업 환경에서 C# 코어·서버·Windows·테스트 프로젝트와
-Golden 생성기 빌드를 확인했습니다. Golden 40개 생성과 검증은 성공했습니다.
-표준 C# 테스트는 VSTest와 testhost 간 연결이 90초 후 시간 초과하여 중단됐습니다.
-기존 `MixerTests`·`LatencyTests`의 23개 테스트 케이스는 테스트 실행기를
-거치지 않고 직접 호출하여 모두 통과했습니다. 이는 전체 xUnit/WPF/서버
-테스트 완료를 의미하지 않습니다.
-
-Rust/Cargo가 설치되지 않았고 `static.rust-lang.org` DNS 요청이 실패하여
-로컬 Rust fmt/clippy/test는 실행하지 못했습니다. `.git` 쓰기도 거부되어
-`feature/rust-audio-server` 브랜치를 만들거나 커밋하지 못했습니다.
-Rust 테스트 통과와 Phase 0/1 완료를 주장하지 않습니다.
-
-검증 가능한 일반 Windows 개발 환경에서는 다음을 실행합니다.
+Windows: Rust 1.99.1, Visual Studio C++ 도구·Windows SDK, .NET 10 SDK,
+Python, Node.js 24, JDK 17/21과 Android SDK 35가 필요합니다.
 
 ```powershell
+./scripts/build-rust.ps1
 dotnet test tests/SoundManager.Tests -c Release
 dotnet test tests/SoundManager.Windows.Tests -c Release
-./scripts/test-rust.ps1
+node --test browser-extension/tests/*.test.js
+# Playwright Chromium 설치 후
+node browser-extension/tests/e2e/run.mjs
+# 실제 Android API -> native 서버 통합 자동 검증
+$env:SM_RUST_SERVER=(Resolve-Path rust/target/release/sound-manager-server.exe).Path
+cd android
+./gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
 
-새 CI는 위 Rust 검증 스크립트를 실행하도록 추가했으며, 아직 원격 실행 결과는
-없습니다. 현재 C# 기준 소스를 함께 커밋해야 기준 해시 검증이 일치합니다.
-검증 실패 시 baseline을 자동 갱신하지 않고 원인과 변경 의도를 먼저 확인합니다.
+`SM_RUST_SERVER`가 없으면 Android native 통합 테스트 하나만 skipped로 명시됩니다.
+CI Android job은 Linux headless Rust 서버를 빌드해 해당 테스트도 실행합니다.
 
-다음 작업은 Rust 검증을 통과시킨 뒤 `sound-protocol`과 `sound-server`를 추가하는
-Phase 2입니다. 개발 서버는 17843을 사용하고, 기존 17842 C# 서버는 유지합니다.
-Windows 릴리스는 단일 `.exe`를 유지하며, Android 서명 키는 변경하지 않습니다.
-서버 주소·키와 360도 방향 조작은 연결/설정 화면 안에 두고, 주 기기 목록의
-스피커 아이콘·‘음소거’·토글과 저장된 페어링/자동 재연결을 유지합니다.
+```powershell
+dotnet build tools/SoundManager.BrowserCheck -c Release
+dotnet build tools/SoundManager.SoakCheck -c Release
+dotnet tools/SoundManager.SoakCheck/bin/Release/net10.0/SoundManager.SoakCheck.dll rust/target/release/sound-manager-server.exe tools/SoundManager.BrowserCheck/bin/Release/net10.0/SoundManager.BrowserCheck.dll 1800 artifacts/validation-v1.0.0/soak-30min.jsonl
+
+dotnet run --project tools/SoundManager.NetworkCheck -c Release -- --tunnel-exe artifacts/windows/cloudflared.exe --rust-exe rust/target/release/sound-manager-server.exe
+```
+
+장시간 비교는 각 backend에 합성 10소스를 보내며 ±1000 ppm 송신 샘플 클록 편차를
+적용합니다. 10초마다 CPU·메모리·버퍼·언더런·폐기·렌더 지표를 기록합니다.
+별도 서버 프로세스의 지표이며 headless 10 ms 출력입니다. 같은 PC에서 동시에
+실행하고 개발 빌드 작업도 병행하므로 엄격히 격리된 성능 벤치마크는 아닙니다.
+Bluetooth 전송 지연이나 실제 장치 안정성 수치를 뜻하지 않습니다.
+
+## 릴리스 진행 기록
+
+2026-11-05: 기능·클라이언트 자동 검증 통과. 10소스 30분 연속 검증과
+최종 EXE·APK 서명/추출·원격 CI 검증을 진행 중입니다. 완료 결과는 이 절과
+`docs/validation-v1.0.0.md`에 기록한 뒤 v1.0.0을 게시합니다.
+
+Windows 다운로드는 단일 EXE이며 ZIP을 배포 자산으로 올리지 않습니다.
+Android 원래 서명 키와 업데이트 공개키를 유지합니다. 서버 주소·키는 인증 설정에만
+표시하고 메인 기기 목록의 이름·스피커 아이콘·‘음소거’·토글 및 별도 방향 조절창,
+저장된 페어링과 자동 재접속을 유지합니다.

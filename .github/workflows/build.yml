@@ -19,8 +19,7 @@ jobs:
       - name: Build and verify Rust backend
         shell: pwsh
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
-          rustup default stable
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
           ./scripts/build-rust.ps1
       - run: dotnet build SoundManager.sln -c Release
       - run: dotnet test tests/SoundManager.Tests -c Release --no-build
@@ -49,7 +48,7 @@ jobs:
           $target = Join-Path $PWD 'artifacts/exe-check'
           $process = Start-Process -FilePath $exe -ArgumentList '--extract-only',$target -WindowStyle Hidden -PassThru -Wait
           if ($process.ExitCode -ne 0) { throw 'EXE extraction failed' }
-          foreach ($name in @('SoundManager.Windows.exe','SoundManager.Windows.dll','sound-manager-server.exe','sound-manager.ico','cloudflared.exe','browser-extension/manifest.json','browser-extension/offscreen.js')) {
+          foreach ($name in @('SoundManager.Windows.exe','SoundManager.Windows.dll','sound-manager-server.exe','sound-manager.ico','RUST-THIRD-PARTY-NOTICES.txt','cloudflared.exe','browser-extension/manifest.json','browser-extension/offscreen.js')) {
             if ((Get-FileHash "artifacts/windows/$name").Hash -ne (Get-FileHash "$target/$name").Hash) { throw "File mismatch: $name" }
           }
       - uses: actions/upload-artifact@v4
@@ -69,8 +68,15 @@ jobs:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+      - name: Build native headless server for Android API integration
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cd rust
+          cargo build --release --locked -p sound-app
       - name: Build APK and lint
         working-directory: android
+        env:
+          SM_RUST_SERVER: ${{ github.workspace }}/rust/target/release/sound-manager-server
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug lintDebug testDebugUnitTest --console=plain
