@@ -96,6 +96,40 @@ fn agc_silence_gate_and_maximum_boost_bound_background_noise() {
     }
 }
 #[test]
+fn agc_never_exceeds_configured_maximum_boost_for_a_quiet_audible_signal() {
+    let mut mixer = Mixer::default();
+    mixer
+        .set_settings(MixSettings {
+            master_volume: 1.0,
+            ..Default::default()
+        })
+        .unwrap();
+    let id = source(&mut mixer, true);
+    let level = 0.003;
+    let maximum = 10f32.powf(12.0 / 20.0);
+    mixer.push(id, &tone(3840, 0, level)).unwrap();
+    let mut energy = 0.0f64;
+    let mut samples = 0;
+    for block in 0..400 {
+        mixer
+            .push(id, &tone(480, 3840 + block * 480, level))
+            .unwrap();
+        let mut output = [0.0; 960];
+        mixer.render(&mut output).unwrap();
+        assert!(output.iter().all(|v| v.abs() <= level * maximum + 1e-6));
+        if block > 300 {
+            energy += output.iter().map(|&v| f64::from(v).powi(2)).sum::<f64>();
+            samples += output.len();
+        }
+    }
+    let rms = (energy / samples as f64).sqrt();
+    let expected = f64::from(level * maximum) * (0.625f64 / 2.0).sqrt();
+    assert!(
+        (rms - expected).abs() < 0.0001,
+        "gain capped RMS {rms}, expected {expected}"
+    );
+}
+#[test]
 fn lookahead_limiter_caps_three_sources_and_keeps_channels_linked() {
     let mut mixer = Mixer::default();
     mixer

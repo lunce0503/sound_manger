@@ -66,4 +66,5 @@ public sealed record SourceDiagnostics(long ReceivedPackets, double LastPacketAu
 
 public sealed record RenderDiagnostics(long RenderCalls, double LastRequestedAudioMs,
     double? LastRenderIntervalMs, double MaxRenderIntervalMs, double MaxRenderDelayMs,
-    double? LastRenderAgoMs, double LastRenderWorkMs, double MaxRenderWorkMs, long LateRenderCalls);
+    double? LastRenderAgoMs, double LastRenderWorkMs, double MaxRenderWorkMs, long LateRenderCalls,
+    long OutputUnderruns = 0);

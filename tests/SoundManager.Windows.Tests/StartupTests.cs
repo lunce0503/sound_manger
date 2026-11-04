@@ -71,9 +71,8 @@ public sealed class StartupTests
         BackgroundLifetimeTests.OnDesktop(async () =>
         {
             var window = new Window(); // Login startup never calls Show or flashes a window.
-            var mixer = new Mixer();
             string key = HubServer.CreateToken();
-            await using var server = new HubServer(mixer, key, 0, "127.0.0.1");
+            await using var server = new RustBackend();
             int attempts = 0, waits = 0;
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await AutomaticServerStart.RunAsync(async token =>
@@ -81,13 +80,13 @@ public sealed class StartupTests
                 attempts++;
                 if (attempts == 1) return false; // Saved Bluetooth endpoint not present yet.
                 if (attempts == 2) throw new IOException("Audio service not ready");
-                await server.StartAsync(token);
+                await server.StartAsync(RustBackendTests.Executable(),null,key,null,new(),token,port:0,headless:true,host:"127.0.0.1");
                 return true;
             }, () => waits++, cancellation.Token, TimeSpan.FromMilliseconds(10));
             Assert.Equal(3, attempts);
             Assert.Equal(2, waits);
             Assert.False(window.IsVisible);
-            using var http = new HttpClient { BaseAddress = new Uri(server.Addresses.Single()) };
+            using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.Port}") };
             http.DefaultRequestHeaders.Add("X-Sound-Key", key);
             using var response = await http.GetAsync("/v1/state", cancellation.Token);
             response.EnsureSuccessStatusCode();

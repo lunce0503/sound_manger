@@ -285,6 +285,13 @@ async fn idle_update_gate_does_not_interrupt_active_audio_and_blocks_new_session
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn streams_pcm_keepalive_and_receives_independent_sources() {
     let fixture = Fixture::new(None).await;
+    fixture
+        .server
+        .hub
+        .engine()
+        .output_underruns_counter()
+        .store(7, std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(fixture.state().await.diagnostics.output_underruns, 7);
     let mut sockets = Vec::new();
     for i in 0..10 {
         let mut socket = fixture.socket(i % 2 == 0).await;

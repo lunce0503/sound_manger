@@ -9,10 +9,7 @@ use std::{
     io::{self, Write},
     net::{IpAddr, SocketAddr},
     path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -77,7 +74,7 @@ async fn run() -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     let engine = worker.engine();
     engine.set_mix(config.mix).await?;
-    let underruns = Arc::new(AtomicU64::new(0));
+    let underruns = engine.output_underruns_counter();
     let missed = underruns.clone();
     let output = if config.headless {
         None
@@ -133,7 +130,7 @@ async fn run() -> Result<(), String> {
                     "beginUpdate"=>json!({"event":"reply","requestId":request,"ok":server.hub.begin_update(message.get("requireIdle").and_then(|v|v.as_bool()).unwrap_or(true)).await}),
                     "cancelUpdate"=>{server.hub.cancel_update().await;json!({"event":"reply","requestId":request,"ok":true})},
                     "state"=> {
-                        let mut state=engine.snapshot().await?;state.diagnostics.output_underruns=underruns.load(Ordering::Relaxed);
+                        let state=engine.snapshot().await?;
                         json!({"event":"reply","requestId":request,"ok":true,"state":state})
                     },
                     _=>json!({"event":"reply","requestId":request,"ok":false})

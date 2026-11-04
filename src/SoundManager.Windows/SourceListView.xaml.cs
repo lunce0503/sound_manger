@@ -219,6 +219,7 @@ public partial class SourceListView : UserControl
             $"출력 요청 간격 최근 / 최대: {Ms(render.LastRenderIntervalMs)} / {Ms(render.MaxRenderIntervalMs)}\n" +
             $"이전 요청 분량을 초과한 최대 출력 공백: {Ms(render.MaxRenderDelayMs)}\n" +
             $"출력 공백 20 ms 초과: {render.LateRenderCalls}회 · 마지막 요청 후: {Ms(render.LastRenderAgoMs)}\n" +
+            $"출력 큐 부족: {render.OutputUnderruns}회\n" +
             $"믹싱 처리 최근 / 최대: {Ms(render.LastRenderWorkMs)} / {Ms(render.MaxRenderWorkMs)}\n\n";
         return text + "수신 공백 증가는 송신·캡처·네트워크 경로, 출력 공백 증가는 서버·출력 장치 경로를 확인하는 단서입니다. " +
             "버퍼 부족·폐기·최대값은 연결 이후 누적이며 출력 계측은 앱 실행 이후 누적입니다. " +

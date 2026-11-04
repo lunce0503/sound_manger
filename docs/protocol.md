@@ -121,6 +121,31 @@ v0.4.0은 `settings.displayName`에 사용자 지정 이름을 저장하고 `sou
 
 ## DSP 순서
 
-`입력별 PCM decode → bounded buffer → 서버 레이트 변환 → 선택적 가상 방향 → 소스 음량/음소거 → 합산 → 저음/고음/명료도 EQ → 전체 음량 → hard clip → WASAPI → OS Bluetooth 출력`
+`입력별 PCM decode → bounded buffer → 서버 레이트 변환/클록 보정 → 선택적 AGC → 선택적 가상 방향 → 소스 음량/음소거 → 합산 → 저음/고음/명료도 EQ → 전체 음량 → look-ahead limiter (해제 시 hard clip) → WASAPI → OS Bluetooth 출력`
+
+## v1.0.0 처리 옵션 추가
+
+기존 v1 클라이언트를 유지하면서 `sources[].settings.autoGain`을 추가했습니다.
+source PATCH의 선택적 boolean이며 생략하면 기존 값을 보존합니다. 기본값은 false이고
+안정된 deviceId의 설정에 함께 저장합니다. AGC 이후에 사용자의 volume 비율을 적용합니다.
+
+인증된 `GET /v1/processing`과 `PUT /v1/processing`은 다음 객체를 사용합니다.
+PUT은 전체 설정을 전송하는 용도이며 누락한 필드는 아래 기본값으로 처리합니다.
+성공 시 200과 상태를 반환하며 잘못된 범위는 400, 저장/엔진 실패는 503입니다.
+
+```json
+{"limiterEnabled":true,"clockCorrection":true,"peakCeiling":0.98,"targetDbfs":-18,"maxGainDb":12,"attackMs":10,"releaseMs":500,"gateDbfs":-60}
+```
+
+범위: peakCeiling 0.1–1, targetDbfs -36–-6, maxGainDb 0–24, attackMs 1–100,
+releaseMs 50–3000, gateDbfs -90–-30 및 targetDbfs보다 6 dB 이상 낮은 값.
+저장은 source-settings.json 옆 processing-settings.json에 원자적으로 수행합니다.
+state에는 같은 processing 객체와 합성 테스트에 사용하는 outputRms/outputPeak를 추가합니다.
+리미터는 5 ms 지연을 추가하며 디지털 sample peak를 제한합니다. 실제 음압 제한이 아닙니다.
+
+Rust의 diagnostics.outputUnderruns는 WASAPI에 줄 믹싱 블록이 부족했던 횟수입니다.
+HTTP와 Windows private pipe 상태 모두에 포함됩니다. 입력의 underruns와 구분합니다.
+Rust 계측은 서버 sidecar 수명 동안 누적되며 수신 처리 시간에는 잠금 대기가 없습니다.
+PCM 도착 시간은 네트워크 수신 때 기록하고 처리 시간은 DSP 소유 스레드에서 측정합니다.
 
 방향 기능은 ITD/ILD 및 후방 필터를 사용한 근사입니다. HRTF 모델·가상 스피커 배열·공간 오디오 코덱을 구현하지 않습니다. Bluetooth A2DP 등 무선 전송 자체는 Windows가 담당합니다.

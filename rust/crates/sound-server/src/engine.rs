@@ -82,6 +82,7 @@ enum Command {
 pub struct Engine {
     commands: SyncSender<Command>,
     stop: Arc<AtomicBool>,
+    output_underruns: Arc<AtomicU64>,
 }
 pub struct EngineWorker {
     engine: Engine,
@@ -293,7 +294,11 @@ impl Engine {
                     thread::sleep(Duration::from_millis(1));
                 }
             })?;
-        let engine = Self { commands, stop };
+        let engine = Self {
+            commands,
+            stop,
+            output_underruns: Arc::new(AtomicU64::new(0)),
+        };
         Ok(EngineWorker {
             engine,
             thread: Some(thread),
@@ -340,7 +345,12 @@ impl Engine {
         self.request(|reply| Command::Mix { settings, reply }).await
     }
     pub async fn snapshot(&self) -> Result<MixerState, String> {
-        self.request(|reply| Command::Snapshot { reply }).await
+        let mut state = self.request(|reply| Command::Snapshot { reply }).await?;
+        state.diagnostics.output_underruns = self.output_underruns.load(Ordering::Relaxed);
+        Ok(state)
+    }
+    pub fn output_underruns_counter(&self) -> Arc<AtomicU64> {
+        self.output_underruns.clone()
     }
     pub async fn set_processing(&self, settings: ProcessingSettings) -> Result<(), String> {
         self.request(|reply| Command::Processing { settings, reply })
