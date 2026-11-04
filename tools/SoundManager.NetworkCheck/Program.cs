@@ -64,7 +64,29 @@ try
         var final=await http.GetFromJsonAsync<MixerState>("/v1/state",deadline.Token);
         if(final?.Settings.BassDb!=6 || final.Settings.MasterVolume!=.5f)throw new IOException("External controls failed.");
         foreach(var socket in sockets)await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"check complete",deadline.Token);
-        Console.WriteLine(JsonSerializer.Serialize(new{backend="rust",httpsStatus=(int)status,unauthenticatedStatus=(int)forbidden.StatusCode,webSocket="wss",nativeAndBrowserPaths=true,pcmReachedDsp=true,mixControl=true,hardwarePlayback=false}));
+        child.StandardInput.Close();await child.WaitForExitAsync(deadline.Token);
+        // A sidecar restart must keep the existing tunnel URL and authentication usable.
+        using var replacement=Process.Start(start)!;_=replacement.StandardError.ReadToEndAsync();
+        try
+        {
+            await replacement.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new{key,port,host="127.0.0.1",headless=true}));await replacement.StandardInput.FlushAsync();
+            using var restarted=JsonDocument.Parse((await replacement.StandardOutput.ReadLineAsync(deadline.Token))!);
+            if(restarted.RootElement.GetProperty("event").GetString()!="ready")throw new IOException("Replacement backend failed");
+            bool restored=false;
+            for(int retry=0;retry<20;retry++)
+            {
+                using var response=await http.GetAsync("/v1/state",deadline.Token);
+                if(response.IsSuccessStatusCode){restored=true;break;}await Task.Delay(200,deadline.Token);
+            }
+            if(!restored)throw new IOException("Existing tunnel did not reconnect to replacement backend");
+            using var reconnected=new ClientWebSocket();reconnected.Options.SetRequestHeader("X-Sound-Key",key);
+            await reconnected.ConnectAsync(new UriBuilder(address){Scheme="wss",Path="/v1/audio"}.Uri,deadline.Token);
+            await reconnected.SendAsync(JsonSerializer.SerializeToUtf8Bytes(new AudioHello(1,"reconnected synthetic",new(48000,2,"pcm16")),json).AsMemory(),WebSocketMessageType.Text,true,deadline.Token);
+            var ack=await reconnected.ReceiveAsync(new byte[4096].AsMemory(),deadline.Token);if(ack.MessageType!=WebSocketMessageType.Text)throw new IOException("WSS reconnect authentication failed");
+            await reconnected.CloseAsync(WebSocketCloseStatus.NormalClosure,"reconnect verified",deadline.Token);
+        }
+        finally{replacement.StandardInput.Close();try{await replacement.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));}catch(TimeoutException){replacement.Kill(true);await replacement.WaitForExitAsync();}}
+        Console.WriteLine(JsonSerializer.Serialize(new{backend="rust",httpsStatus=(int)status,unauthenticatedStatus=(int)forbidden.StatusCode,webSocket="wss",nativeAndBrowserPaths=true,pcmReachedDsp=true,mixControl=true,sameTunnelAndKeyAfterRestart=true,hardwarePlayback=false}));
     }
     finally{foreach(var socket in sockets)socket.Dispose();}
 }

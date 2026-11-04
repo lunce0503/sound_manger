@@ -23,6 +23,8 @@ internal sealed class RustBackend : IAsyncDisposable
     private Process? process;
     private Task reader=Task.CompletedTask,errors=Task.CompletedTask,watcher=Task.CompletedTask;
     private MixerState snapshot=new(new(),[],0);
+    private readonly object snapshotGate=new();
+    private long snapshotOrder;
     private long requestId;
     private volatile bool stopping;
     public event Action? Failed;
@@ -100,13 +102,14 @@ internal sealed class RustBackend : IAsyncDisposable
     private async Task<JsonElement> RequestAsync(string op,bool requireIdle=true,CancellationToken cancellation=default)
     {
         using var timeout=CancellationTokenSource.CreateLinkedTokenSource(cancellation,lifetime.Token);timeout.CancelAfter(TimeSpan.FromSeconds(3));
-        long id=Interlocked.Increment(ref requestId);var reply=new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        replies[id]=reply;
+        long id=0;var reply=new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
             await write.WaitAsync(timeout.Token).ConfigureAwait(false);
             try
             {
+                // Assign IDs in pipe order, so cached states can reject late continuations.
+                id=Interlocked.Increment(ref requestId);replies[id]=reply;
                 string message=JsonSerializer.Serialize(new{op,requireIdle,requestId=id},Json);
                 await process!.StandardInput.WriteLineAsync(message.AsMemory(),timeout.Token).ConfigureAwait(false);
                 await process.StandardInput.FlushAsync(timeout.Token).ConfigureAwait(false);
@@ -120,7 +123,15 @@ internal sealed class RustBackend : IAsyncDisposable
     {
         var message=await RequestAsync("state",cancellation:cancellation).ConfigureAwait(false);
         var value=message.GetProperty("state").Deserialize<MixerState>(Json)??throw new IOException("Rust 서버 상태를 확인하지 못했습니다.");
-        Volatile.Write(ref snapshot,value);return value;
+        return AcceptSnapshot(message.GetProperty("requestId").GetInt64(),value);
+    }
+    internal MixerState AcceptSnapshot(long order,MixerState value)
+    {
+        lock(snapshotGate)
+        {
+            if(order>snapshotOrder){snapshotOrder=order;Volatile.Write(ref snapshot,value);}
+            return snapshot;
+        }
     }
     public async Task SetMixAsync(MixSettings settings,CancellationToken cancellation=default)
     {

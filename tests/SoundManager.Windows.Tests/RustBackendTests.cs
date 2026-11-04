@@ -12,6 +12,16 @@ namespace SoundManager.Windows.Tests;
 
 public sealed class RustBackendTests
 {
+    [Fact] public async Task LatePollCannotUndoACompletedMuteInTheControllerCache()
+    {
+        await using var backend=new RustBackend();
+        Guid id=Guid.NewGuid();
+        var old=new MixerState(new(),[new(id,"music",new(48000,2,"pcm16"),new(Muted:false),60,0,0)],0);
+        var updated=old with{Sources=[old.Sources[0] with{Settings=new(Muted:true)}]};
+        backend.AcceptSnapshot(12,updated);
+        Assert.True(Assert.Single(backend.AcceptSnapshot(11,old).Sources).Settings.Muted);
+        Assert.True(Assert.Single(backend.Snapshot().Sources).Settings.Muted);
+    }
     private static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web);
     internal static string Executable()
     {

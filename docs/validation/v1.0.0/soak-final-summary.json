@@ -1,0 +1,38 @@
+{
+  "durationSeconds": 1804.1466191,
+  "hardwarePlayback": false,
+  "backends": {
+    "rust": {
+      "samples": 180,
+      "sources": 10,
+      "receivedPackets": 902410,
+      "cpuCorePercentMedian": 4.53125,
+      "cpuCorePercentP95": 9.375,
+      "privateBytesFinal": 6639616,
+      "privateBytesGrowth": 176128,
+      "underruns": 0,
+      "droppedFrames": 0,
+      "latencyTrims": 0,
+      "sampledBufferMinMs": 15.645833333333334,
+      "sampledBufferMaxMs": 91.39583333333333,
+      "maxRenderWorkMs": 0.8846999999999999,
+      "lateRenderCalls": 0
+    },
+    "csharp": {
+      "samples": 180,
+      "sources": 10,
+      "receivedPackets": 902080,
+      "cpuCorePercentMedian": 7.109375,
+      "cpuCorePercentP95": 19.6875,
+      "privateBytesFinal": 26488832,
+      "privateBytesGrowth": 462848,
+      "underruns": 226,
+      "droppedFrames": 241972,
+      "latencyTrims": 100,
+      "sampledBufferMinMs": 11.75,
+      "sampledBufferMaxMs": 120.0625,
+      "maxRenderWorkMs": 2.1776,
+      "lateRenderCalls": 0
+    }
+  }
+}

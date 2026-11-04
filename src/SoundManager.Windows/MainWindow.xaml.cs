@@ -130,7 +130,7 @@ public partial class MainWindow : Window
         candidate.Failed+=()=>Dispatcher.BeginInvoke(async ()=>
         {
             if(server!=candidate||closing)return;
-            await StopServer();Status.Text="Rust 서버 연결 종료 · 저장된 출력 장치로 재시도합니다.";
+            await StopServer(preserveExternal:true);Status.Text="Rust 서버 연결 종료 · 저장된 출력 장치로 재시도합니다.";
             StartAutomatically(force:true);
         });
         try
@@ -251,10 +251,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task StopServer()
+    private async Task StopServer(bool preserveExternal = false)
     {
-        tunnelStart?.Cancel();
-        await StopExternal();
+        // Keep the public URL and saved pairing valid across a sidecar-only restart.
+        if(!preserveExternal){tunnelStart?.Cancel();await StopExternal();}
         var current = server; server = null;
         mixer.Detach();
         if (current is not null) await current.DisposeAsync();

@@ -11,7 +11,7 @@ Android Java, Chrome·Edge 확장과 v1 PCM 프로토콜은 유지합니다.
 | 0 기준선 | 설정 백업, 전용 브랜치, 결정적 C# 합성 음원 fixture 40개 | C# 코어·서버 71개 회귀 테스트 |
 | 1 DSP | 입력 형식·링 버퍼·리샘플링·방향·EQ·48 kHz stereo 믹싱 | 기존 처리 모드에서 fixture 40개 PCM·버퍼·카운터 일치 |
 | 2 네트워크 | Tokio/Axum 인증 REST·WebSocket, 세션 교체, 기기 설정의 원자적 저장 | 인증·브라우저 Origin·keepalive·크기/시간 제한·16소스 상한·업데이트 gate·재접속·저장 실패 등 서버 테스트 12개 |
-| 3 Windows | Rust WASAPI sidecar, private pipe 제어, 종료 감지·재시작, 트레이·자동 시작·업데이트·아이콘 | Windows 테스트 26개; 실제 저장된 출력 장치의 음량 0 초기화·종료 확인 |
+| 3 Windows | Rust WASAPI sidecar, private pipe 제어, 종료 감지·재시작, 트레이·자동 시작·업데이트·아이콘 | Windows 테스트 27개; 실제 저장된 출력 장치의 음량 0 초기화·종료 확인 |
 | 4 품질 | 입력별 AGC, 5 ms look-ahead 리미터, fractional 클록 보정과 개별 해제 옵션 | 입력 레벨·stereo 비율·무음 gate·피크 상한·연속성·±1500 ppm 가상 90초 시험 |
 | 5 클라이언트·배포 | 실 Chrome 탭 캡처, Android API/OkHttp 합성 PCM, 외부 HTTPS/WSS, CI·서명 배포 | 아래 진행/완료 기록과 릴리스 검증 결과 참고 |
 
@@ -40,6 +40,7 @@ WPF는 Rust 서버만 제어하며 C# 믹서와 WASAPI 출력기를 동시에 �
 개발용 native 서버 기본 포트는 17843, WPF가 시작하는 서버는 기존 17842입니다.
 서버 키는 명령줄에 넣지 않고 부모·자식 사이의 private stdin pipe로 전달합니다.
 부모 pipe가 닫히면 서버도 종료하며, 예기치 않은 자식 종료는 저장된 장치로 재시도합니다.
+이때 기존 외부 터널을 유지해 주소·인증을 바꾸지 않고 재접속할 수 있습니다.
 구조화된 생명주기 로그는 `%LOCALAPPDATA%/SoundManager/logs/backend.jsonl`에
 크기를 제한해 저장하고 키·주소·원본 자식 출력을 기록하지 않습니다.
 
@@ -68,7 +69,7 @@ AGC 기본 목표는 -18 dBFS RMS, 최대 증폭 12 dB, attack 10 ms, release 50
 
 Golden 비교 허용 오차는 PCM 절대값 0.00002, 버퍼 시간 0.000000001 ms이며
 프레임·패킷·클리핑·언더런·trim 카운터는 정확히 일치해야 합니다.
-C# 계약에 AutoGain/Processing 필드를 추가하면서 manifest의 Contracts.cs 해시만
+C# 계약에 AutoGain/Processing 및 출력 큐 부족 필드를 추가하면서 manifest의 Contracts.cs 해시만
 갱신했습니다. 기존 40개 binary fixture의 내용과 SHA256은 바뀌지 않았습니다.
 
 ## 재현
@@ -108,9 +109,12 @@ Bluetooth 전송 지연이나 실제 장치 안정성 수치를 뜻하지 않습
 
 ## 릴리스 진행 기록
 
-2026-11-05: 기능·클라이언트 자동 검증 통과. 10소스 30분 연속 검증과
-최종 EXE·APK 서명/추출·원격 CI 검증을 진행 중입니다. 완료 결과는 이 절과
-`docs/validation-v1.0.0.md`에 기록한 뒤 v1.0.0을 게시합니다.
+2026-11-05: 기능·클라이언트 자동 검증과 최종 패키지 native 서버의 10소스
+1804초 연속 시험을 통과했습니다. 최종 시험의 underrun·폐기·trim은 모두 0입니다.
+Windows EXE 추출·APK 원래 인증서·업데이트 서명을 확인했습니다.
+첫 부하 병행 시험의 일시적 끊김도 숨기지 않고
+[전체 검증 기록](validation-v1.0.0.md)에 최종 결과와 함께 보존했습니다.
+v1.0.0은 자동 검증 후 EXE·APK·서명 메타데이터로 배포합니다.
 
 Windows 다운로드는 단일 EXE이며 ZIP을 배포 자산으로 올리지 않습니다.
 Android 원래 서명 키와 업데이트 공개키를 유지합니다. 서버 주소·키는 인증 설정에만
