@@ -1,16 +1,17 @@
 # Sound Manager Rust migration
 
-This workspace implements the incremental Rust migration. The working Windows UI
-now launches a Rust sidecar; the public v0.4.1 release still has the C# server.
+This workspace implements the Rust server used by Sound Manager 1.0.0.
+The Windows WPF UI launches and supervises the native sidecar. The previous
+v0.4.1 release remains available as a C# rollback baseline.
 
 Crates: **sound-core**, **sound-protocol**, **sound-server**, **sound-output**
 (Windows WASAPI) and **sound-app** (`sound-manager-server.exe`). v1 wire contracts,
 pairing keys, persistent device settings and client identities are preserved.
-The runtime does not load the C# mixer or ASP.NET server. The old implementation
+The runtime does not run the C# mixer or ASP.NET server. The old implementation
 remains available for comparison tests and rollback. The pinned toolchain is Rust 1.99.1.
 
 ```powershell
-# From the repository root, with .NET 10 and Rust stable installed:
+# From the repository root, with .NET 10 and Rust 1.99.1 installed:
 ./scripts/test-rust.ps1
 
 # Rust-only checks, using checked-in C# output fixtures:
@@ -34,15 +35,19 @@ resampling produces 48 kHz float stereo for mixing. Each source holds about
 500 ms of input. Startup is 40 ms, the target reserve is 60 ms and the base trim
 threshold is 120 ms, extended to retain large output requests.
 
-The C# clock-correction expression currently uses integer division, so fractional
-drift correction is effectively inactive. This implementation preserves that
-behavior for the initial numerical comparison. Correcting it requires a separate
-Phase 4 change, clock-skew tests and reviewed baseline changes.
+The C# clock-correction expression uses integer division, so fractional correction
+is effectively inactive. The core's default compatibility mode preserves this for
+golden comparisons. The running server enables tested fractional clock correction
+and a stereo-linked 5 ms look-ahead limiter. Both can be independently disabled via
+`/v1/processing`. Per-source `autoGain` enables bounded RMS normalization before the
+user's volume ratio; it defaults to false. Processing and device options persist.
 
 Internal source handles are not protocol UUIDs or persistent device IDs.
 The sidecar accepts startup configuration and control over its private stdin pipe,
 including the connection key (never process arguments). stdout carries bounded JSON
 responses; the parent closing the pipe stops the server. Normal Windows startup,
 device selection, source controls and close-to-tray continue through WPF.
-AGC and look-ahead limiting remain to be implemented. See [migration status](../docs/rust-migration.md)
-and [golden fixture specification](tests/compatibility/README.md).
+See [migration status](../docs/rust-migration.md), [release validation](../docs/validation-v1.0.0.md)
+and [golden fixture specification](tests/compatibility/README.md). The final native
+binary passed a 10-source 30-minute synthetic run with zero underruns or discarded
+frames. Android physical capture/listening validation is deferred by user instruction.
