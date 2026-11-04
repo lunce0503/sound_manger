@@ -3,6 +3,7 @@ import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {once} from 'node:events';
+import {randomBytes} from 'node:crypto';
 import {mkdtemp, mkdir, copyFile, readFile, writeFile} from 'node:fs/promises';
 import {resolve, join, dirname} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -18,11 +19,18 @@ await writeFile(join(extension,'service-worker.js'),await readFile(join(extensio
 // Only the isolated test copy pregrants this loopback fixture. Production requests its chosen host at pairing time.
 const manifest = JSON.parse(await readFile(join(extension, 'manifest.json'), 'utf8'));
 manifest.host_permissions = ['http://127.0.0.1/*']; await writeFile(join(extension, 'manifest.json'), JSON.stringify(manifest));
-const host = spawn('dotnet', [resolve(root, '../tools/SoundManager.BrowserCheck/bin/Release/net10.0/SoundManager.BrowserCheck.dll')], {stdio: ['pipe','pipe','pipe']});
+const rustHost = process.env.SM_BROWSER_BACKEND !== 'csharp';
+const testKey = randomBytes(24).toString('hex');
+const host = rustHost
+  ? spawn(process.env.SM_RUST_SERVER ?? resolve(root,'../rust/target/release/sound-manager-server.exe'),[],{stdio:['pipe','pipe','pipe']})
+  : spawn('dotnet', [resolve(root, '../tools/SoundManager.BrowserCheck/bin/Release/net10.0/SoundManager.BrowserCheck.dll')], {stdio: ['pipe','pipe','pipe']});
 const lines = createInterface({input: host.stdout}); const initial = once(lines, 'line');
+if(rustHost)host.stdin.write(JSON.stringify({key:testKey,host:'127.0.0.1',port:0,headless:true})+'\n');
 const failure = once(host, 'exit').then(() => {throw new Error('Browser test host exited unexpectedly');});
 failure.catch(() => {});
-const [first] = await Promise.race([initial, failure]); const pair = JSON.parse(first);
+const [first] = await Promise.race([initial, failure]); const startup=JSON.parse(first);
+if(rustHost)assert.equal(startup.event,'ready');
+const pair = rustHost ? {address:`http://127.0.0.1:${startup.port}`,key:testKey} : startup;
 const code = `soundmanager://pair?v=1&server=${encodeURIComponent(pair.address)}&key=${pair.key}`;
 const fixture = createServer((request, response) => {
   const label = request.url === '/a' ? 'Test tab A' : 'Test tab B';
@@ -100,7 +108,10 @@ async function patch(id, changes) {
   const response=await fetch(new URL('/v1/sources/'+id,pair.address),{method:'PATCH',headers:{'X-Sound-Key':pair.key,'Content-Type':'application/json'},body:JSON.stringify(changes)});
   assert.equal(response.status,200);
 }
-async function render() {const reply=once(lines,'line');host.stdin.write('render\n');return JSON.parse((await reply)[0]);}
+async function render() {
+  const reply=once(lines,'line');host.stdin.write(rustHost?JSON.stringify({op:'state',requestId:1})+'\n':'render\n');
+  const result=JSON.parse((await reply)[0]);return rustHost?{rms:result.state.outputRms,sources:result.state.sources.length}:result;
+}
 try {
   const {worker,id} = await launch();
   const a=await context.newPage(); await a.goto(origin+'/a');
@@ -113,7 +124,7 @@ try {
   await popup.screenshot({path:join(run,'popup.png')}); await popup.close();
   await a.locator('#tone').click();
   const sourceA=await until(async()=> (await state()).sources.find(s=>s.name==='Test tab A'&&s.bufferedMs>=40),'First tab PCM missing');
-  await until(async()=> (await state()).sources.find(s=>s.id===sourceA.id)?.droppedFrames>sourceA.droppedFrames,'Capture stopped when popup closed');
+  await until(async()=> (await state()).sources.find(s=>s.id===sourceA.id)?.diagnostics?.receivedPackets>sourceA.diagnostics.receivedPackets,'Capture stopped when popup closed');
   await until(async()=> (await render()).rms>0,'First tab PCM remained silent');
   const profileId=await worker.evaluate(async()=> (await chrome.storage.local.get('profiles')).profiles[0].id);
   const b=await context.newPage();await b.goto(origin+'/b');
@@ -121,7 +132,7 @@ try {
   await until(async()=> (await state()).sources.length===2,'Second tab did not connect');await popup.close();await b.locator('#tone').click();
   const sourceB=await until(async()=> (await state()).sources.find(s=>s.name==='Test tab B'&&s.bufferedMs>=40),'Second tab PCM missing');
   await patch(sourceA.id,{muted:true,displayName:'음악 탭'});await patch(sourceB.id,{muted:true});
-  assert.equal((await render()).rms,0);
+  await until(async()=> (await render()).rms===0,'Mute did not reach the output');
   await patch(sourceB.id,{muted:false,volume:0.5});await until(async()=> (await render()).rms>0,'Second tab PCM remained silent');
   assert((await state()).sources.find(s=>s.id===sourceA.id).settings.muted);
   // Simulate the Windows updater replacing the installed files. Active captures defer reload.
@@ -147,8 +158,8 @@ try {
   await until(()=>popup.locator('#start').isEnabled(),'Saved pairing was not reused after browser restart');
   await popup.locator('#profile').selectOption(profileId);await popup.locator('#start').click();
   await until(async()=> (await state()).sources.some(s=>s.name==='음악 탭'&&s.settings.muted),'Saved tab settings were not restored');
-  console.log(JSON.stringify({tabs:2,rawPcm:true,popupIndependent:true,serverMuteAndVolume:true,rename:true,idleExtensionUpdate:true,pairingAndProfileRestored:true,hardwarePlayback:false}));
+  console.log(JSON.stringify({backend:rustHost?'rust':'csharp',tabs:2,rawPcm:true,popupIndependent:true,serverMuteAndVolume:true,rename:true,idleExtensionUpdate:true,pairingAndProfileRestored:true,hardwarePlayback:false}));
 } finally {
   await context?.close();await new Promise(resolve=>fixture.close(resolve));
-  host.stdin.end('exit\n');await Promise.race([once(host,'exit'),new Promise(resolve=>setTimeout(resolve,5000))]);if(host.exitCode===null)host.kill();
+  host.stdin.end(rustHost?JSON.stringify({op:'stop',requestId:2})+'\n':'exit\n');await Promise.race([once(host,'exit'),new Promise(resolve=>setTimeout(resolve,5000))]);if(host.exitCode===null)host.kill();
 }
