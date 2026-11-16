@@ -64,6 +64,17 @@ internal sealed class RustBackend : IAsyncDisposable
                         if(value.TryGetProperty("requestId",out var id)&&id.TryGetInt64(out long number)&&replies.TryRemove(number,out var completion))completion.TrySetResult(value.Clone());
                         break;
                     case "error":BackendLog.Write("native-error",process!.Id);ready.TrySetException(new IOException("Rust 오디오 서버를 시작하지 못했습니다. 출력 장치와 저장된 설정을 확인하세요."));break;
+                    case "output-ready": BackendLog.Write("output-ready",process!.Id); break;
+                    case "output-retry":
+                        var stage=value.GetProperty("stage").GetString();
+                        if(stage is not null && stage.Length<=40 && stage.All(c=>c is >= 'a' and <= 'z' or '-'))
+                        {
+                            var code=value.GetProperty("code");
+                            BackendLog.Write("output-retry",process!.Id,stage:stage,
+                                code:code.ValueKind==JsonValueKind.Number?code.GetInt32():null,
+                                attempt:value.GetProperty("attempt").GetInt64());
+                        }
+                        break;
                 }
             }
         }
@@ -122,6 +133,7 @@ internal sealed class RustBackend : IAsyncDisposable
     public async Task<MixerState> RefreshAsync(CancellationToken cancellation=default)
     {
         var message=await RequestAsync("state",cancellation:cancellation).ConfigureAwait(false);
+        if(!message.GetProperty("ok").GetBoolean())throw new IOException("Rust 서버 상태를 확인하지 못했습니다.");
         var value=message.GetProperty("state").Deserialize<MixerState>(Json)??throw new IOException("Rust 서버 상태를 확인하지 못했습니다.");
         return AcceptSnapshot(message.GetProperty("requestId").GetInt64(),value);
     }

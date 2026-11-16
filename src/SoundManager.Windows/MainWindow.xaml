@@ -27,6 +27,7 @@
             <Button x:Name="ServerButton" Content="서버 시작" Click="ToggleServer"/>
         </WrapPanel>
         <TextBlock x:Name="ServerAddress" Text="포트 17842 · 같은 Wi-Fi/LAN에서 연결" TextWrapping="Wrap"/>
+        <TextBlock x:Name="OutputRecovery" Text="출력 장치 연결 대기 중 · 서버 연결은 유지됩니다." Visibility="Collapsed" TextWrapping="Wrap" Foreground="#A9BCD6"/>
         <Expander Header="새 기기 연결 · QR 인증" Foreground="#EDF3FF" Margin="0,10" Expanded="PairingSettingsOpened">
         <StackPanel>
         <TextBlock Text="휴대폰 앱의 연결 관리에서 QR로 연결하세요." FontSize="16" FontWeight="Bold"/>

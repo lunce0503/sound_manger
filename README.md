@@ -2,7 +2,7 @@
 
 여러 Windows·Android 기기의 재생음을 Windows 서버에서 합쳐 Bluetooth 이어폰·스피커로 출력합니다. Rust가 음원 수신·믹싱·WASAPI 출력을 담당하며 Windows 화면은 WPF, Android 앱은 Java를 유지합니다. QR로 연결하고 전체 음량, EQ와 음원별 방향을 조정합니다. 외부 네트워크에서는 앱의 Cloudflare HTTPS 터널을 사용할 수 있습니다.
 
-[v1.0.0 릴리스 및 다운로드](https://github.com/lunce0503/sound_manger/releases/tag/v1.0.0) · [변경 사항](docs/releases/v1.0.0.md)
+[v1.0.1 릴리스 및 다운로드](https://github.com/lunce0503/sound_manger/releases/tag/v1.0.1) · [변경 사항](docs/releases/v1.0.1.md)
 
 ```mermaid
 flowchart LR
@@ -26,7 +26,7 @@ flowchart LR
 ## 실행
 
 1. Windows 서버 PC에 Bluetooth 이어폰/스피커를 페어링합니다.
-2. 배포한 `SoundManager-1.0.0-windows-x64.exe`를 실행합니다. 필요한 파일이 사용자 앱 폴더에 자동으로 풀리고 앱이 열리며 새 아이콘의 바탕화면·시작 메뉴 바로가기를 만듭니다. 출력 장치를 선택한 뒤 **서버 시작**을 누릅니다.
+2. 배포한 `SoundManager-1.0.1-windows-x64.exe`를 실행합니다. 필요한 파일이 사용자 앱 폴더에 자동으로 풀리고 앱이 열리며 새 아이콘의 바탕화면·시작 메뉴 바로가기를 만듭니다. 출력 장치를 선택한 뒤 **서버 시작**을 누릅니다.
 3. Windows 방화벽 알림에서는 사용하는 **개인 네트워크** 접근을 허용합니다. 수동 설정이 필요한 경우 서버 TCP `17842`를 같은 LAN에 허용합니다.
 4. Windows의 **새 기기 연결 · QR 인증**을 펼쳐 휴대폰과 같은 네트워크의 주소를 선택합니다. Android의 **연결 관리 → QR로 서버 연결**에서 스캔하고 주소를 확인하여 연결합니다. 카메라 없이 연결 코드를 붙여넣거나 연결 관리의 **주소와 키로 연결**을 사용할 수도 있습니다.
 5. Android에서 **재생음 전송 시작**을 누르고 오디오 권한 및 시스템 캡처 승인을 합니다. 캡처 가능한 앱에서 음악을 재생합니다. 서버의 출력 장치로 합산된 음원이 재생됩니다.
@@ -64,7 +64,7 @@ Windows 서버와 Android 앱의 목록 행은 **이름 · 스피커 아이콘�
 
 ### 자동 업데이트
 
-**v0.4.0 이하 앱은 v1.0.0 EXE·APK를 한 번 직접 설치해야 합니다. v0.4.1부터 앱 내부 업데이트를 사용합니다.** 앱을 삭제하거나 데이터를 지우지 않고 업데이트하세요.
+**v0.4.0 이하 앱은 v1.0.1 EXE·APK를 한 번 직접 설치해야 합니다. v0.4.1부터 앱 내부 업데이트를 사용합니다.** 앱을 삭제하거나 데이터를 지우지 않고 업데이트하세요.
 
 - **Windows → 앱 업데이트**: 자동 확인·다운로드와 대기 중 자동 적용이 기본으로 켜져 있습니다. 시작 30초 후 및 실행 중 6시간마다 GitHub 공개 릴리스를 확인합니다. 음원 연결/전송이 끝난 뒤 다운로드하고, 창이 닫혀 있으며 음원·외부 터널 연결이 없으면 자동으로 재시작합니다. 서버 역할, 출력 장치, 전체 음량·EQ, 기기별 설정, 페어링 및 로그인 시작 설정을 복원합니다. 새 앱이 시작 확인에 실패하면 이전 실행 파일로 복구하고 해당 버전의 자동 적용을 보류합니다. **지금 확인 / 재시작 후 업데이트**도 지원합니다. 외부 터널 사용 중에는 자동 적용을 미루며, 수동 적용 시 임시 주소가 바뀌므로 새 QR이 필요합니다.
 - **Android → 앱 업데이트**: 앱을 열 때와 OS의 주기적 백그라운드 작업으로 확인하고, Wi-Fi 등 요금제 제한이 없는 연결에서 자동 다운로드합니다. OS 절전 정책에 따라 백그라운드 확인 시점은 달라집니다. **지금 확인 및 다운로드**는 모바일 데이터도 사용합니다. **다운로드한 업데이트 설치**에서 설치 권한을 허용하고 Android 시스템 화면에서 확인합니다. [Android 설치 권한](https://developer.android.com/reference/android/content/pm/PackageManager#canRequestPackageInstalls()) 기존 서명·앱 ID를 유지해 페어링과 기기 ID를 보존하며, 설치 후 소리 전송에는 다시 캡처 승인이 필요합니다.
@@ -127,7 +127,7 @@ cd android
 
 - Windows 개발용 실행 폴더: `artifacts/windows/SoundManager.Windows.exe` (x64, .NET 런타임 포함). 사용자 배포에는 아래의 단일 EXE를 사용합니다.
 - Android 개발용: `artifacts/android/SoundManager-debug.apk`.
-- 릴리스: `scripts/release.ps1`로 **단일 Windows EXE**와 **릴리스 서명 APK**, `SHA256SUMS.txt`를 `artifacts/release/v1.0.0`에 생성합니다. Windows 배포는 항상 EXE이며 ZIP은 내부 패키징에만 사용합니다. EXE는 구성 파일 무결성을 확인하고 `%LOCALAPPDATA%/SoundManager/versions`에 풀어 실행합니다. Android 서명 키는 `%LOCALAPPDATA%/SoundManager/release-signing`에 보관하며 업데이트를 위해 보존해야 합니다. [릴리스·서명 안내](docs/releasing.md)
+- 릴리스: `scripts/release.ps1`로 **단일 Windows EXE**와 **릴리스 서명 APK**, `SHA256SUMS.txt`를 `artifacts/release/v1.0.1`에 생성합니다. Windows 배포는 항상 EXE이며 ZIP은 내부 패키징에만 사용합니다. EXE는 구성 파일 무결성을 확인하고 `%LOCALAPPDATA%/SoundManager/versions`에 풀어 실행합니다. Android 서명 키는 `%LOCALAPPDATA%/SoundManager/release-signing`에 보관하며 업데이트를 위해 보존해야 합니다. [릴리스·서명 안내](docs/releasing.md)
 - CI: push/PR마다 Windows 빌드·테스트, Android APK 빌드·lint를 실행하고 GitHub Actions artifact로 저장합니다.
 
 ### 실제 브라우저 캡처 검증
@@ -180,4 +180,4 @@ Windows 서버의 기기별 **⋮ → 통신·재생 진단**에서 1초마다 �
 | `docs/protocol.md` | 통신 규격 |
 | `docs/validation.md` | 빌드/테스트 결과와 실기기 점검 절차 |
 
-MIT 라이선스. 현재 버전 `1.0.0`. 포함한 라이브러리·터널 도구의 라이선스는 `THIRD-PARTY-NOTICES.md`와 `RUST-THIRD-PARTY-NOTICES.txt`를 참조하세요.
+MIT 라이선스. 현재 버전 `1.0.1`. 포함한 라이브러리·터널 도구의 라이선스는 `THIRD-PARTY-NOTICES.md`와 `RUST-THIRD-PARTY-NOTICES.txt`를 참조하세요.

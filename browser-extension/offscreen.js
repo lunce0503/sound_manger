@@ -26,8 +26,9 @@ function connect(stream) {
     } catch { socket.close(4000, 'Invalid response'); }
   };
   socket.onclose = event => {
-    clearTimeout(timeout); stream.ready = false;
+    clearTimeout(timeout);
     if (stream.stopped || stream.socket !== socket) return;
+    stream.ready = false;
     if ([1007, 1008].includes(event.code)) { stop(stream.tabId, '서버 인증·음원 형식·연결 한도를 확인하세요.'); return; }
     report(stream, '재연결 대기 중');
     stream.retry = setTimeout(() => connect(stream), stream.backoff);

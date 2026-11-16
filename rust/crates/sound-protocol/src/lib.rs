@@ -95,6 +95,9 @@ pub struct RenderDiagnostics {
     pub max_render_work_ms: f64,
     pub late_render_calls: u64,
     pub output_underruns: u64,
+    pub output_ready: Option<bool>,
+    pub input_timeouts: u64,
+    pub input_transport_errors: u64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

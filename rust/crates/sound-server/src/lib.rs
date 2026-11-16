@@ -397,6 +397,9 @@ async fn close(socket: &mut WebSocket, code: u16) {
         1011 => "Audio engine unavailable",
         _ => "Invalid audio protocol or source limit",
     };
+    close_with_reason(socket, code, reason).await;
+}
+async fn close_with_reason(socket: &mut WebSocket, code: u16, reason: &'static str) {
     let _ = tokio::time::timeout(
         Duration::from_secs(2),
         socket.send(Message::Close(Some(CloseFrame {
@@ -473,7 +476,15 @@ async fn handle_audio(hub: Hub, mut socket: WebSocket, browser: bool) {
                     let _ = futures_util::SinkExt::flush(&mut socket).await;
                     break;
                 }
-                Ok(None) | Ok(Some(Err(_))) => break,
+                Ok(None) | Ok(Some(Err(_))) => {
+                    hub.engine.record_transport_error();
+                    break;
+                }
+                Err(_) => {
+                    hub.engine.record_input_timeout();
+                    close_with_reason(&mut socket, 1001, "Audio input timed out; retry").await;
+                    break;
+                }
                 _ => {
                     close(&mut socket, 1007).await;
                     break;

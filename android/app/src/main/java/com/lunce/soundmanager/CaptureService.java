@@ -11,7 +11,6 @@ import android.os.*;
 import org.json.JSONObject;
 import java.util.concurrent.atomic.AtomicBoolean;
 import okhttp3.*;
-import okio.ByteString;
 
 public final class CaptureService extends Service {
     public static volatile String status = "음원 전송 중지됨";
@@ -21,7 +20,7 @@ public final class CaptureService extends Service {
     private final Handler main = new Handler(Looper.getMainLooper());
     private MediaProjection projection;
     private AudioRecord recorder;
-    private WebSocket socket;
+    private AudioUplink uplink;
     private PowerManager.WakeLock wakeLock;
     private final MediaProjection.Callback callback = new MediaProjection.Callback() {
         @Override public void onStop() { finish("캡처 권한이 종료되었습니다."); }
@@ -51,30 +50,21 @@ public final class CaptureService extends Service {
             Api api = new Api(intent.getStringExtra("address"), intent.getStringExtra("key"));
             String deviceId=DeviceIdentity.get(this);
             Request request = new Request.Builder().url(api.address + "/v1/audio").header("X-Sound-Key", api.key).build();
-            socket = Api.CLIENT.newWebSocket(request, new WebSocketListener() {
-                private boolean ready;
-                @Override public void onOpen(WebSocket ws, Response response) {
-                    try {
-                        JSONObject format = new JSONObject().put("sampleRate", 48000).put("channels", 2).put("encoding", "pcm16");
-                        ws.send(new JSONObject().put("version", 1).put("name", Build.MODEL).put("format", format).put("deviceId",deviceId).toString());
-                    } catch (Exception error) { finish(error.getMessage()); }
-                }
-                @Override public void onMessage(WebSocket ws, String text) {
-                    if (ready || !running.get()) return;
-                    try {
-                        new JSONObject(text).getString("sourceId"); ready = true;
-                        new Thread(() -> capture(ws), "pcm-capture").start();
-                    } catch (Exception error) { finish("서버 형식 응답 오류"); }
-                }
-                @Override public void onFailure(WebSocket ws, Throwable error, Response response) { finish("전송 실패: " + error.getMessage()); }
-                @Override public void onClosing(WebSocket ws, int code, String reason) { ws.close(code, reason); finish("서버 연결 종료"); }
-            });
-            main.postDelayed(() -> { if (running.get() && status.equals("서버 연결 중…")) finish("서버 연결 시간 초과"); }, 10000);
+            JSONObject format = new JSONObject().put("sampleRate", 48000).put("channels", 2).put("encoding", "pcm16");
+            String hello = new JSONObject().put("version", 1).put("name", Build.MODEL)
+                .put("format", format).put("deviceId", deviceId).toString();
+            uplink = new AudioUplink(Api.CLIENT, request, hello, message -> {
+                if (running.get() && !finishing.get()) status = message;
+            }, () -> {
+                AudioUplink current = uplink;
+                new Thread(() -> capture(current), "pcm-capture").start();
+            }, this::finish);
+            uplink.start();
         } catch (Exception error) { finish("캡처 시작 실패: " + error.getMessage()); }
         return START_NOT_STICKY;
     }
 
-    private void capture(WebSocket ws) {
+    private void capture(AudioUplink transport) {
         AudioRecord local = null;
         try {
             if (!running.get()) return;
@@ -93,15 +83,13 @@ public final class CaptureService extends Service {
                 recorder = local;
                 local.startRecording();
             }
-            status = "원본 PCM 전송 중 · 48 kHz / 16-bit / stereo";
             byte[] bytes = new byte[3840]; // 20 ms, no EQ, volume or resampling on client.
             while (running.get()) {
                 int read = local.read(bytes, 0, bytes.length, AudioRecord.READ_BLOCKING);
                 if (read < 0) throw new IllegalStateException("AudioRecord 오류 " + read);
                 if (read == 0) continue;
                 if (read % 4 != 0) throw new IllegalStateException("불완전한 캡처 프레임");
-                if (ws.queueSize() > 38400 || !ws.send(ByteString.of(bytes, 0, read)))
-                    throw new IllegalStateException("네트워크가 느려 전송을 중지했습니다. Wi-Fi를 확인하세요.");
+                transport.send(bytes, read);
             }
         } catch (Exception error) { if (running.get()) finish(error.getMessage()); }
         finally {
@@ -118,7 +106,7 @@ public final class CaptureService extends Service {
     private synchronized void cleanup() {
         running.set(false); active = false;
         if (recorder != null) { try { recorder.stop(); } catch (IllegalStateException ignored) { } }
-        if (socket != null) { socket.cancel(); socket = null; }
+        if (uplink != null) { uplink.close(); uplink = null; }
         if (projection != null) { projection.unregisterCallback(callback); projection.stop(); projection = null; }
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         wakeLock = null; stopForeground(STOP_FOREGROUND_REMOVE);

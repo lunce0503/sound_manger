@@ -1,4 +1,7 @@
-param([string]$Version = '1.0.0')
+param(
+    [string]$Version = '1.0.1',
+    [string]$SigningDirectory = (Join-Path $env:LOCALAPPDATA 'SoundManager\release-signing')
+)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected semantic version, for example 0.2.0' }
@@ -6,15 +9,11 @@ $sourceVersion = ([xml](Get-Content -LiteralPath (Join-Path $repoRoot 'Directory
 $androidConfig = Get-Content -LiteralPath (Join-Path $repoRoot 'android/app/build.gradle') -Raw
 if ($sourceVersion -ne $Version -or [regex]::Match($androidConfig,"versionName\s+'([^']+)'").Groups[1].Value -ne $Version) { throw 'Source versions must match the requested release' }
 # Reuse this key for all future updates. Never put it or its password in Git or release assets.
-$signingRoot = Join-Path $env:LOCALAPPDATA 'SoundManager\release-signing'
+$signingRoot = $SigningDirectory
 $keystore = Join-Path $signingRoot 'release.jks'
 $passwordFile = Join-Path $signingRoot 'keystore-password.dpapi'
-New-Item -ItemType Directory -Force -Path $signingRoot | Out-Null
-if ((Test-Path -LiteralPath $keystore) -and !(Test-Path -LiteralPath $passwordFile)) { throw 'Signing password missing. Restore the original password; do not replace the key.' }
-if (!(Test-Path -LiteralPath $passwordFile)) {
-    $randomPassword = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(36))
-    ConvertTo-SecureString $randomPassword -AsPlainText -Force | ConvertFrom-SecureString | Set-Content -LiteralPath $passwordFile
-    $randomPassword = $null
+if (!(Test-Path -LiteralPath $keystore -PathType Leaf) -or !(Test-Path -LiteralPath $passwordFile -PathType Leaf)) {
+    throw 'Restore the original release keystore and DPAPI password before building.'
 }
 $securePassword = Get-Content -LiteralPath $passwordFile | ConvertTo-SecureString
 $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
@@ -28,10 +27,6 @@ try {
     $env:SM_KEYSTORE_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
     $env:SM_KEY_ALIAS = 'soundmanager'
     $env:SM_KEY_PASSWORD = $env:SM_KEYSTORE_PASSWORD
-    if (!(Test-Path -LiteralPath $keystore)) {
-        & "$env:JAVA_HOME\bin\keytool.exe" -genkeypair -keystore $keystore -storetype JKS -alias soundmanager -keyalg RSA -keysize 3072 -validity 10000 -dname 'CN=Sound Manager, O=Lunce' -storepass:env SM_KEYSTORE_PASSWORD -keypass:env SM_KEY_PASSWORD
-        if ($LASTEXITCODE -ne 0) { throw 'Signing key creation failed' }
-    }
     & "$PSScriptRoot\build.ps1" -SkipAndroid
     Push-Location android
     try {

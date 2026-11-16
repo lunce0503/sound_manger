@@ -16,6 +16,23 @@ use tokio_tungstenite::{
 use uuid::Uuid;
 
 type Socket = WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn idle_audio_is_counted_and_closed_with_a_retryable_status() {
+    let fixture = Fixture::new(None).await;
+    let mut socket = fixture.socket(false).await;
+    fixture
+        .hello(&mut socket, Some(Uuid::new_v4()), false)
+        .await;
+    let message = tokio::time::timeout(Duration::from_secs(12), socket.next())
+        .await
+        .unwrap();
+    assert!(
+        matches!(message, Some(Ok(Message::Close(Some(frame)))) if frame.code == CloseCode::Away)
+    );
+    fixture.wait_count(0).await;
+    assert_eq!(fixture.state().await.diagnostics.input_timeouts, 1);
+}
 struct Fixture {
     server: RunningServer,
     _worker: EngineWorker,

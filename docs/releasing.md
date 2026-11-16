@@ -4,7 +4,7 @@
 
 ## Android 서명
 
-첫 릴리스 빌드가 `%LOCALAPPDATA%/SoundManager/release-signing/release.jks`를 생성합니다. 암호는 같은 폴더의 `keystore-password.dpapi`에 Windows 사용자별 DPAPI로 암호화해 보관합니다. 다음 릴리스는 같은 키를 재사용합니다. **둘 다 Git·릴리스 자산에 올리지 않습니다.** 키를 잃으면 기존 릴리스 앱의 업데이트 서명이 달라집니다.
+기존 릴리스 키 `release.jks`와 사용자별 DPAPI 암호 파일 `keystore-password.dpapi`가 필요합니다. 기본 위치는 `%LOCALAPPDATA%/SoundManager/release-signing`이며 다른 위치에 보관했다면 `release.ps1 -SigningDirectory <폴더>`로 지정합니다. **두 파일은 Git·릴리스 자산에 올리지 않습니다.**
 
 안전한 별도 저장소에 키를 백업하세요. DPAPI 파일은 생성한 Windows 사용자/환경에 묶이므로 다른 PC로 이관할 때는 원래 환경에서 비밀번호를 안전하게 이관하는 별도 작업이 필요합니다. 현재 빌드 도구는 평문 암호를 출력하지 않습니다.
 

@@ -9,7 +9,10 @@ use std::{
     io::{self, Write},
     net::{IpAddr, SocketAddr},
     path::PathBuf,
-    sync::{Arc, atomic::Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -66,12 +69,9 @@ async fn run() -> Result<(), String> {
         return Err("Invalid initial mix settings".into());
     }
     let queue = Arc::new(AudioQueue::new(6));
-    let worker = Engine::start(if config.headless {
-        None
-    } else {
-        Some(queue.clone())
-    })
-    .map_err(|e| e.to_string())?;
+    let output_active = Arc::new(AtomicBool::new(false));
+    let worker = Engine::start((!config.headless).then(|| (queue.clone(), output_active.clone())))
+        .map_err(|e| e.to_string())?;
     let engine = worker.engine();
     engine.set_mix(config.mix).await?;
     let underruns = engine.output_underruns_counter();
@@ -82,25 +82,30 @@ async fn run() -> Result<(), String> {
         let id = config
             .output_device_id
             .ok_or_else(|| "Select an output device".to_owned())?;
-        let mut current = [0.0; BLOCK_FRAMES * 2];
-        let mut offset = current.len();
-        Some(sound_output::Output::start(id, move |samples| {
-            let mut written = 0;
-            while written < samples.len() {
-                if offset == current.len() {
-                    if let Some(block) = queue.pop() {
-                        current = block;
-                        offset = 0;
-                    } else {
-                        samples[written..].fill(0.0);
-                        missed.fetch_add(1, Ordering::Relaxed);
-                        break;
+        Some(sound_output::Output::start(id, output_active, move || {
+            let queue = queue.clone();
+            let missed = missed.clone();
+            let mut current = [0.0; BLOCK_FRAMES * 2];
+            let mut offset = current.len();
+            move |samples| {
+                let mut written = 0;
+                while written < samples.len() {
+                    if offset == current.len() {
+                        if let Some(block) = queue.pop() {
+                            current = block;
+                            offset = 0;
+                        } else {
+                            samples[written..].fill(0.0);
+                            missed.fetch_add(1, Ordering::Relaxed);
+                            break;
+                        }
                     }
+                    let count = (current.len() - offset).min(samples.len() - written);
+                    samples[written..written + count]
+                        .copy_from_slice(&current[offset..offset + count]);
+                    offset += count;
+                    written += count;
                 }
-                let count = (current.len() - offset).min(samples.len() - written);
-                samples[written..written + count].copy_from_slice(&current[offset..offset + count]);
-                offset += count;
-                written += count;
             }
         })?)
     };
@@ -130,15 +135,26 @@ async fn run() -> Result<(), String> {
                     "beginUpdate"=>json!({"event":"reply","requestId":request,"ok":server.hub.begin_update(message.get("requireIdle").and_then(|v|v.as_bool()).unwrap_or(true)).await}),
                     "cancelUpdate"=>{server.hub.cancel_update().await;json!({"event":"reply","requestId":request,"ok":true})},
                     "state"=> {
-                        let state=engine.snapshot().await?;
-                        json!({"event":"reply","requestId":request,"ok":true,"state":state})
+                        match engine.snapshot().await {
+                            Ok(state)=>json!({"event":"reply","requestId":request,"ok":true,"state":state}),
+                            Err(_)=>json!({"event":"reply","requestId":request,"ok":false}),
+                        }
                     },
                     _=>json!({"event":"reply","requestId":request,"ok":false})
                 };
                 respond(response).map_err(|e|e.to_string())?;
                 line.clear();
             }
-            _=monitor.tick()=>{if let Some(error)=output.as_ref().and_then(|output|output.failure()){server.stop().await;return Err(error);}},
+            _=monitor.tick()=>{
+                while let Some(event)=output.as_ref().and_then(sound_output::Output::next_event) {
+                    let message = match event {
+                        sound_output::OutputEvent::Ready => json!({"event":"output-ready"}),
+                        sound_output::OutputEvent::Retry { attempt, error } =>
+                            json!({"event":"output-retry","attempt":attempt,"stage":error.stage,"code":error.code}),
+                    };
+                    respond(message).map_err(|e|e.to_string())?;
+                }
+            },
             _=tokio::signal::ctrl_c()=>break,
         }
     }

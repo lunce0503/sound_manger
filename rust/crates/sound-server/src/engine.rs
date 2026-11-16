@@ -83,6 +83,8 @@ pub struct Engine {
     commands: SyncSender<Command>,
     stop: Arc<AtomicBool>,
     output_underruns: Arc<AtomicU64>,
+    input_timeouts: Arc<AtomicU64>,
+    input_transport_errors: Arc<AtomicU64>,
 }
 pub struct EngineWorker {
     engine: Engine,
@@ -102,7 +104,9 @@ impl EngineWorker {
     }
 }
 impl Engine {
-    pub fn start(output: Option<Arc<AudioQueue>>) -> std::io::Result<EngineWorker> {
+    pub fn start(
+        output: Option<(Arc<AudioQueue>, Arc<AtomicBool>)>,
+    ) -> std::io::Result<EngineWorker> {
         let (commands, receiver) = mpsc::sync_channel(64);
         let stop = Arc::new(AtomicBool::new(false));
         let stopped = stop.clone();
@@ -113,6 +117,7 @@ impl Engine {
                 let _ = mixer.set_processing(ProcessingSettings::recommended());
                 let mut slots: Vec<Slot> = Vec::with_capacity(16);
                 let mut timing = RenderDiagnostics::default();
+                let mut was_output_active = false;
                 let mut last_render: Option<Instant> = None;
                 let mut block = [0.0; BLOCK_FRAMES * 2];
                 let mut rms = 0.0;
@@ -216,6 +221,9 @@ impl Engine {
                                 let mut diagnostics = timing.clone();
                                 diagnostics.last_render_ago_ms =
                                     last_render.map(|last| last.elapsed().as_secs_f64() * 1000.0);
+                                diagnostics.output_ready = output
+                                    .as_ref()
+                                    .map(|(_, active)| active.load(Ordering::Acquire));
                                 let _ = reply.send(Ok(MixerState {
                                     settings: mixer.settings(),
                                     sources,
@@ -256,7 +264,18 @@ impl Engine {
                         }
                     }
                     let now = Instant::now();
-                    let due = output.as_ref().map_or(now >= next, |queue| queue.len() < 2);
+                    let active_queue = output.as_ref().and_then(|(queue, active)| {
+                        active.load(Ordering::Acquire).then_some(queue)
+                    });
+                    if active_queue.is_some() != was_output_active {
+                        if let Some((queue, _)) = &output {
+                            while queue.pop().is_some() {}
+                        }
+                        was_output_active = active_queue.is_some();
+                        next = now;
+                        last_render = None;
+                    }
+                    let due = active_queue.map_or(now >= next, |queue| queue.len() < 2);
                     if due {
                         if let Some(last) = last_render {
                             let interval = now.duration_since(last).as_secs_f64() * 1000.0;
@@ -281,14 +300,16 @@ impl Engine {
                             / block.len() as f64)
                             .sqrt();
                         peak = block.iter().fold(0.0f32, |p, &v| p.max(v.abs()));
-                        if let Some(queue) = &output {
+                        if let Some(queue) = active_queue {
                             let _ = queue.push(block);
                         }
                         // Retain the hardware-free test clock's phase instead of adding
                         // scheduling lateness to every block and falling behind real time.
-                        next += Duration::from_millis(10);
-                        if now.saturating_duration_since(next) > Duration::from_secs(1) {
-                            next = now + Duration::from_millis(10);
+                        if active_queue.is_none() {
+                            next += Duration::from_millis(10);
+                            if now.saturating_duration_since(next) > Duration::from_secs(1) {
+                                next = now + Duration::from_millis(10);
+                            }
                         }
                     }
                     thread::sleep(Duration::from_millis(1));
@@ -298,6 +319,8 @@ impl Engine {
             commands,
             stop,
             output_underruns: Arc::new(AtomicU64::new(0)),
+            input_timeouts: Arc::new(AtomicU64::new(0)),
+            input_transport_errors: Arc::new(AtomicU64::new(0)),
         };
         Ok(EngineWorker {
             engine,
@@ -347,7 +370,16 @@ impl Engine {
     pub async fn snapshot(&self) -> Result<MixerState, String> {
         let mut state = self.request(|reply| Command::Snapshot { reply }).await?;
         state.diagnostics.output_underruns = self.output_underruns.load(Ordering::Relaxed);
+        state.diagnostics.input_timeouts = self.input_timeouts.load(Ordering::Relaxed);
+        state.diagnostics.input_transport_errors =
+            self.input_transport_errors.load(Ordering::Relaxed);
         Ok(state)
+    }
+    pub(crate) fn record_input_timeout(&self) {
+        self.input_timeouts.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn record_transport_error(&self) {
+        self.input_transport_errors.fetch_add(1, Ordering::Relaxed);
     }
     pub fn output_underruns_counter(&self) -> Arc<AtomicU64> {
         self.output_underruns.clone()

@@ -70,11 +70,58 @@ public sealed class RustBackendTests
         }
         finally{Directory.Delete(directory,true);}
     }
-    [Fact] public async Task MissingDeviceFailsWithoutOpeningAFallbackDeviceOrExposingKey()
+    [Fact] public async Task MissingOutputDeviceKeepsControlAndAudioConnectionsOpen()
     {
         string key=HubServer.CreateToken();await using var backend=new RustBackend();
-        var error=await Assert.ThrowsAnyAsync<Exception>(()=>backend.StartAsync(Executable(),"not-a-real-device",key,null,new(),port:0,host:"127.0.0.1"));
-        Assert.DoesNotContain(key,error.ToString());
+        using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await backend.StartAsync(Executable(),"not-a-real-device",key,null,new(),timeout.Token,port:0,host:"127.0.0.1");
+        Assert.False(backend.Snapshot().Diagnostics!.OutputReady);
+        using var socket=new ClientWebSocket();
+        socket.Options.SetRequestHeader("X-Sound-Key",key);
+        await socket.ConnectAsync(new Uri($"ws://127.0.0.1:{backend.Port}/v1/audio"),timeout.Token);
+        byte[] hello=JsonSerializer.SerializeToUtf8Bytes(new AudioHello(1,"waiting for output",new(48000,2,"pcm16")),Json);
+        await socket.SendAsync(hello.AsMemory(),WebSocketMessageType.Text,true,timeout.Token);
+        await socket.ReceiveAsync(new byte[4096].AsMemory(),timeout.Token);
+        Guid id=Assert.Single((await backend.RefreshAsync(timeout.Token)).Sources).Id;
+        byte[] silence=new byte[3840];
+        for(int i=0;i<280;i++)
+        {
+            await socket.SendAsync(silence.AsMemory(),WebSocketMessageType.Binary,true,timeout.Token);
+            await Task.Delay(20,timeout.Token);
+        }
+        var after=await backend.RefreshAsync(timeout.Token);
+        Assert.Equal(id,Assert.Single(after.Sources).Id);
+        Assert.True(after.Sources[0].Diagnostics!.ReceivedPackets>260);
+        Assert.True(after.Diagnostics!.RenderCalls>100);
+        Assert.False(after.Diagnostics.OutputReady);
+        await socket.CloseAsync(WebSocketCloseStatus.NormalClosure,"done",timeout.Token);
+    }
+    [Fact] public async Task WindowsUplinkReconnectsWithTheSameDeviceIdentity()
+    {
+        string key=HubServer.CreateToken();
+        await using var backend=new RustBackend();
+        using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        await backend.StartAsync(Executable(),null,key,null,new(),timeout.Token,port:0,headless:true,host:"127.0.0.1");
+        var endpoint=new Uri($"ws://127.0.0.1:{backend.Port}/v1/audio");
+        var hello=new AudioHello(1,"Windows uplink",new(48000,2,"pcm16"),Guid.NewGuid());
+        await using var sender=new AudioSender();
+        var reconnected=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int connected=0;
+        sender.ConnectionChanged+=ready=>{ if(ready && Interlocked.Increment(ref connected)==2)reconnected.TrySetResult(); };
+        await sender.StartTransportAsync(endpoint,key,JsonSerializer.SerializeToUtf8Bytes(hello,Json),timeout.Token);
+        var first=Assert.Single((await backend.RefreshAsync(timeout.Token)).Sources);
+        Assert.Equal(SourceUpdateResult.Updated,await backend.UpdateSourceAsync(first.Id,new(Muted:true)));
+        using var replacement=new ClientWebSocket();
+        replacement.Options.SetRequestHeader("X-Sound-Key",key);
+        await replacement.ConnectAsync(endpoint,timeout.Token);
+        var interrupt=JsonSerializer.SerializeToUtf8Bytes(hello with{Name="temporary replacement"},Json);
+        await replacement.SendAsync(interrupt.AsMemory(),WebSocketMessageType.Text,true,timeout.Token);
+        await replacement.ReceiveAsync(new byte[4096].AsMemory(),timeout.Token);
+        await reconnected.Task.WaitAsync(timeout.Token);
+        var restored=Assert.Single((await backend.RefreshAsync(timeout.Token)).Sources);
+        Assert.NotEqual(first.Id,restored.Id);
+        Assert.Equal("Windows uplink",restored.Name);
+        Assert.True(restored.Settings.Muted);
     }
     [Fact] public async Task PartialPrivateControlMessageSurvivesWatchdogTicksAndPipeEofStopsChild()
     {

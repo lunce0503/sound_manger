@@ -6,12 +6,12 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 import okhttp3.*;
-import okio.ByteString;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.*;
 
 /** Real OkHttp/API -> Rust integration with synthetic PCM. Does not test AudioRecord hardware. */
@@ -34,24 +34,39 @@ public class RustApiIntegrationTest {
             assertEquals(0,api.call("GET","/v1/state",null).getJSONArray("sources").length());
             api.call("PUT","/v1/mix",new JSONObject().put("masterVolume",0.4).put("bassDb",6));
             String device=UUID.randomUUID().toString();
-            WebSocket first=connect(api,device);sockets.add(first);
-            byte[] pcm=new byte[3840];for(int i=0;i<pcm.length;i+=2){pcm[i]=(byte)0xe8;pcm[i+1]=3;}
-            for(int i=0;i<8;i++){assertTrue(first.send(ByteString.of(pcm)));Thread.sleep(20);}
-            JSONObject source=api.call("GET","/v1/state",null).getJSONArray("sources").getJSONObject(0);
-            assertTrue(source.getJSONObject("diagnostics").getLong("receivedPackets")>0);
-            assertEquals("pcm16",source.getJSONObject("format").getString("encoding"));
-            assertEquals(48000,source.getJSONObject("format").getInt("sampleRate"));
-            api.call("PATCH","/v1/sources/"+source.getString("id"),new JSONObject().put("volume",0.35).put("azimuth",275).put("spatial",true).put("muted",true).put("autoGain",true).put("displayName","Android 합성 음원"));
-            first.close(1000,"reconnect");
-            for(int i=0;i<100 && api.call("GET","/v1/state",null).getJSONArray("sources").length()!=0;i++)Thread.sleep(10);
-            WebSocket second=connect(api,device);sockets.add(second);
-            JSONObject restored=api.call("GET","/v1/state",null).getJSONArray("sources").getJSONObject(0);
-            JSONObject settings=restored.getJSONObject("settings");assertEquals("Android 합성 음원",restored.getString("name"));
-            assertEquals(0.35,settings.getDouble("volume"),0.00001);assertEquals(275,settings.getInt("azimuth"));
-            assertTrue(settings.getBoolean("muted") && settings.getBoolean("spatial") && settings.getBoolean("autoGain"));
-            assertEquals(6,api.call("GET","/v1/state",null).getJSONObject("settings").getInt("bassDb"));
-            try {new Api(api.address,UUID.randomUUID().toString()).call("GET","/v1/state",null);fail("Expected authentication failure");}
-            catch(Api.Failure error){assertEquals(401,error.status);}
+            AtomicInteger captureStarts=new AtomicInteger();
+            CountDownLatch firstReady=new CountDownLatch(1), recovered=new CountDownLatch(1);
+            AtomicInteger readyEvents=new AtomicInteger();
+            Request request=new Request.Builder().url(api.address+"/v1/audio").header("X-Sound-Key",api.key).build();
+            String hello=new JSONObject().put("version",1).put("name","Android uplink").put("deviceId",device)
+                .put("format",new JSONObject().put("sampleRate",48000).put("channels",2).put("encoding","pcm16")).toString();
+            try(AudioUplink uplink=new AudioUplink(Api.CLIENT,request,hello,status->{
+                if(status.startsWith("원본 PCM") && readyEvents.incrementAndGet()==2)recovered.countDown();
+            },()->{captureStarts.incrementAndGet();firstReady.countDown();},status->{})) {
+                uplink.start();
+                assertTrue(firstReady.await(8,TimeUnit.SECONDS));
+                byte[] pcm=new byte[3840];for(int i=0;i<pcm.length;i+=2){pcm[i]=(byte)0xe8;pcm[i+1]=3;}
+                for(int i=0;i<8;i++){uplink.send(pcm,pcm.length);Thread.sleep(20);}
+                JSONObject source=api.call("GET","/v1/state",null).getJSONArray("sources").getJSONObject(0);
+                assertTrue(source.getJSONObject("diagnostics").getLong("receivedPackets")>0);
+                assertEquals("pcm16",source.getJSONObject("format").getString("encoding"));
+                assertEquals(48000,source.getJSONObject("format").getInt("sampleRate"));
+                api.call("PATCH","/v1/sources/"+source.getString("id"),new JSONObject().put("volume",0.35).put("azimuth",275).put("spatial",true).put("muted",true).put("autoGain",true).put("displayName","Android 합성 음원"));
+                // Replacing the same device cancels the original socket with a retryable close.
+                WebSocket second=connect(api,device);sockets.add(second);
+                assertTrue(recovered.await(8,TimeUnit.SECONDS));
+                JSONObject restored=api.call("GET","/v1/state",null).getJSONArray("sources").getJSONObject(0);
+                assertNotEquals(source.getString("id"),restored.getString("id"));
+                assertEquals(1,captureStarts.get());
+                for(int i=0;i<8;i++){uplink.send(pcm,pcm.length);Thread.sleep(20);}
+                assertTrue(api.call("GET","/v1/state",null).getJSONArray("sources").getJSONObject(0).getJSONObject("diagnostics").getLong("receivedPackets")>0);
+                JSONObject settings=restored.getJSONObject("settings");assertEquals("Android 합성 음원",restored.getString("name"));
+                assertEquals(0.35,settings.getDouble("volume"),0.00001);assertEquals(275,settings.getInt("azimuth"));
+                assertTrue(settings.getBoolean("muted") && settings.getBoolean("spatial") && settings.getBoolean("autoGain"));
+                assertEquals(6,api.call("GET","/v1/state",null).getJSONObject("settings").getInt("bassDb"));
+                try {new Api(api.address,UUID.randomUUID().toString()).call("GET","/v1/state",null);fail("Expected authentication failure");}
+                catch(Api.Failure error){assertEquals(401,error.status);}
+            }
         } finally {
             for(WebSocket socket:sockets)socket.cancel();
             child.getOutputStream().close();if(!child.waitFor(5,TimeUnit.SECONDS)){child.destroyForcibly();child.waitFor();}

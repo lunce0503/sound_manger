@@ -227,8 +227,8 @@ public partial class MainWindow : Window
             {
                 if (server is not null) return true;
                 if (busy || this.sender is not null || savedOutput is null) return false;
-                var selected = ReadOutputDevices().FirstOrDefault(d => d.Id == savedOutput.Id);
-                if (selected is null) return false;
+                var selected = ReadOutputDevices().FirstOrDefault(d => d.Id == savedOutput.Id)
+                    ?? new DeviceItem(savedOutput.Id,savedOutput.Name);
                 busy = true;
                 try
                 {
@@ -239,7 +239,7 @@ public partial class MainWindow : Window
                     Status.Text = "로그인 후 서버를 자동 시작했습니다. 백그라운드에서 실행 중입니다.";
                     return true;
                 }
-                catch { await StopServer(); throw; }
+                catch { await StopServer(preserveExternal:true); throw; }
                 finally { busy = false; }
             }, () => Status.Text = "서버 자동 시작 대기 중 · 저장된 출력 장치와 연결 상태를 확인하며 재시도합니다.", cancellation.Token);
         }
@@ -396,7 +396,16 @@ public partial class MainWindow : Window
                 if (server is not null) throw new InvalidOperationException("먼저 통합 서버를 중지하세요.");
                 var candidate = new AudioSender();
                 candidate.Failed += message => Dispatcher.BeginInvoke(async () =>
-                { await StopSender(); Status.Text = "전송 종료: " + message; });
+                {
+                    if(sender!=candidate||closing)return;
+                    await StopSender();
+                    Status.Text = "전송 종료: " + message;
+                });
+                candidate.ConnectionChanged += connected => Dispatcher.BeginInvoke(() =>
+                {
+                    if(sender!=candidate||closing)return;
+                    Status.Text=connected?"기본 출력 장치의 원본 PCM을 전송 중입니다.":"서버 연결이 끊겼습니다. 저장된 연결로 재시도합니다.";
+                });
                 try
                 {
                     await candidate.StartAsync(RemoteAddress.Text.Trim(), RemoteKey.Text.Trim(), Environment.MachineName, shutdown.Token);
@@ -429,8 +438,10 @@ public partial class MainWindow : Window
         if(closing)return;
         await mixer.RefreshAsync();
         if(closing)return;
-        lifetime.SetStatus(server is not null ? "서버 실행 중" : sender is not null ? "음원 전송 중" : automaticStart is not null ? "자동 시작 대기 중" : "대기 중");
         var state = mixer.Snapshot();
+        bool waitingForOutput=server is not null && state.Diagnostics?.OutputReady==false;
+        OutputRecovery.Visibility=waitingForOutput?Visibility.Visible:Visibility.Collapsed;
+        lifetime.SetStatus(server is not null ? waitingForOutput ? "출력 장치 연결 대기" : "서버 실행 중" : sender is not null ? "음원 전송 중" : automaticStart is not null ? "자동 시작 대기 중" : "대기 중");
         if (!MasterVolume.IsMouseCaptureWithin) MasterVolume.Value = state.Settings.MasterVolume * 100;
         sourceList.Refresh(state.Sources, state.Diagnostics);
         _=UpdateOnIdleAsync();
